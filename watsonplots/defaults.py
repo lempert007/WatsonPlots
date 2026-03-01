@@ -1,5 +1,5 @@
+from collections.abc import Callable
 from enum import Enum
-from typing import Callable
 
 import pandas as pd
 
@@ -22,7 +22,10 @@ AXIS_TYPE_CHECKS: list[tuple[Callable, AxisType]] = [
 ]
 
 TICK_FORMAT_CHECKS: list[tuple[Callable, TickFormat]] = [
-    (lambda s: pd.api.types.is_numeric_dtype(s) and s.abs().max() >= 10_000, TickFormat.LARGE_NUMBER),
+    (
+        lambda s: pd.api.types.is_numeric_dtype(s) and s.abs().max() >= 10_000,
+        TickFormat.LARGE_NUMBER,
+    ),
 ]
 
 

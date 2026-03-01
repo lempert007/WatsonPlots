@@ -1,4 +1,5 @@
 import os
+import sys
 import tempfile
 
 import pytest
@@ -52,7 +53,7 @@ def test_save_pdf_per_page_2(time_df, dist_df):
         assert len(pypdf.PdfReader(path).pages) == 1
 
 
-def test_save_pdf_per_page_4_two_pages(time_df, dist_df, numeric_df):
+def test_save_pdf_per_page_4_two_pages(time_df):
     # 5 charts with per_page=4 → 2 pages (4 on first, 1 on second)
     charts = [wp.line(time_df, x="date", y="revenue")] * 5
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -62,7 +63,6 @@ def test_save_pdf_per_page_4_two_pages(time_df, dist_df, numeric_df):
 
 
 def test_save_pdf_missing_pypdf_raises(monkeypatch, time_df):
-    import sys
     monkeypatch.setitem(sys.modules, "pypdf", None)
     charts = [wp.line(time_df, x="date", y="revenue")]
     with tempfile.TemporaryDirectory() as tmpdir:

@@ -1,4 +1,6 @@
+import pandas as pd
 import plotly.graph_objects as go
+import pytest
 
 import watsonplots as wp
 from watsonplots.chart import Chart
@@ -65,7 +67,6 @@ def test_line_xlabel(time_df):
 
 
 def test_line_coercion_dict():
-    import pandas as pd
     data = {"date": pd.date_range("2024-01-01", periods=5), "value": [1, 2, 3, 4, 5]}
     chart = wp.line(data, x="date", y="value")
     assert isinstance(chart, Chart)
@@ -88,19 +89,18 @@ def test_area_stacked(time_df):
 
 # --- list-of-DataFrames ---
 
+
 def test_line_df_list(time_df):
     fig = wp.line([time_df, time_df], x="date", y="revenue").to_fig()
     assert len(fig.data) == 2
 
 
 def test_line_df_list_labels(time_df):
-    fig = wp.line([time_df, time_df], x="date", y="revenue",
-                  color=["Alpha", "Beta"]).to_fig()
+    fig = wp.line([time_df, time_df], x="date", y="revenue", color=["Alpha", "Beta"]).to_fig()
     assert fig.data[0].name == "Alpha"
     assert fig.data[1].name == "Beta"
 
 
 def test_line_df_list_label_mismatch_raises(time_df):
-    import pytest
     with pytest.raises(ValueError, match="label"):
         wp.line([time_df, time_df], x="date", y="revenue", color=["Only One"])

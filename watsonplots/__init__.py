@@ -34,10 +34,10 @@ Themes
 
 from . import themes
 from .chart import Chart
+from .charts import area, histogram, line, scatter
 from .pdf import save_pdf
 from .report import save_html
 from .themes import Theme, get_theme
-from .charts import area, histogram, line, scatter
 
 __all__ = [
     "line",

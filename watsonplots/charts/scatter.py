@@ -51,13 +51,22 @@ def scatter(
             customdata = sub_df[hover_data].values
             hovertemplate = (
                 f"<b>{x}</b>: %{{x}}<br><b>{y}</b>: %{{y}}"
-                + "".join(f"<br><b>{col}</b>: %{{customdata[{i}]}}" for i, col in enumerate(hover_data))
+                + "".join(
+                    f"<br><b>{col}</b>: %{{customdata[{i}]}}" for i, col in enumerate(hover_data)
+                )
                 + "<extra></extra>"
             )
         else:
             customdata, hovertemplate = None, None
-        return go.Scatter(x=sub_df[x], y=sub_df[y], mode="markers", name=name,
-                          marker=marker, customdata=customdata, hovertemplate=hovertemplate)
+        return go.Scatter(
+            x=sub_df[x],
+            y=sub_df[y],
+            mode="markers",
+            name=name,
+            marker=marker,
+            customdata=customdata,
+            hovertemplate=hovertemplate,
+        )
 
     fig = go.Figure()
     for sub_df, group_label in groups:

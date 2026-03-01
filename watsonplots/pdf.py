@@ -1,14 +1,18 @@
 import io
 import os
 
+from plotly.subplots import make_subplots
+
 from .chart import Chart
 from .consts import A4_H, A4_W, SKIP_AXIS_KEYS
+from .layout import apply_theme
 from .themes import Theme, get_theme
 
 
 def _axis_props(axis) -> dict:
-    return {k: v for k, v in axis.to_plotly_json().items()
-            if k not in SKIP_AXIS_KEYS and v is not None}
+    return {
+        k: v for k, v in axis.to_plotly_json().items() if k not in SKIP_AXIS_KEYS and v is not None
+    }
 
 
 def _render_batch(charts: list[Chart], override_theme: Theme | None = None) -> bytes:
@@ -16,18 +20,14 @@ def _render_batch(charts: list[Chart], override_theme: Theme | None = None) -> b
     figs = [c.to_fig() for c in charts]
 
     if override_theme is not None:
-        from .layout import apply_theme
         for fig in figs:
             apply_theme(fig, override_theme, title=fig.layout.title.text or "")
 
     if len(charts) == 1:
         return figs[0].to_image(format="pdf", width=A4_W, height=A4_H)
 
-    from plotly.subplots import make_subplots
-
     n = len(charts)
     base = figs[0].layout
-
     subfig = make_subplots(rows=n, cols=1, vertical_spacing=0.06)
 
     for row, fig in enumerate(figs, 1):
@@ -72,9 +72,9 @@ def save_pdf(
               If omitted each chart keeps its own theme.
     """
     try:
-        import pypdf
-    except ImportError:
-        raise ImportError("PDF export requires pypdf: pip install pypdf")
+        import pypdf  # pylint: disable=import-outside-toplevel
+    except ImportError as exc:
+        raise ImportError("PDF export requires pypdf: pip install pypdf") from exc
 
     path = str(path)
     if not path.endswith(".pdf"):

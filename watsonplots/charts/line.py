@@ -48,11 +48,15 @@ def line(
     fig = go.Figure()
     for sub_df, group_label in groups:
         for y_col in y_cols:
-            fig.add_trace(go.Scatter(
-                x=sub_df[x], y=sub_df[y_col],
-                mode=mode, name=group_label or y_col,
-                line=dict(shape=line_shape),
-            ))
+            fig.add_trace(
+                go.Scatter(
+                    x=sub_df[x],
+                    y=sub_df[y_col],
+                    mode=mode,
+                    name=group_label or y_col,
+                    line={"shape": line_shape},
+                )
+            )
 
     apply_theme(fig, resolved_theme, title=title or smart_title(x, y_cols[0]))
     fig.update_xaxes(
@@ -99,12 +103,16 @@ def area(
     trace_n = 0
     for sub_df, group_label in groups:
         for y_col in y_cols:
-            fig.add_trace(go.Scatter(
-                x=sub_df[x], y=sub_df[y_col],
-                mode="lines", name=group_label or y_col,
-                fill="tonexty" if (stacked and trace_n > 0) else "tozeroy",
-                line=dict(width=1),
-            ))
+            fig.add_trace(
+                go.Scatter(
+                    x=sub_df[x],
+                    y=sub_df[y_col],
+                    mode="lines",
+                    name=group_label or y_col,
+                    fill="tonexty" if (stacked and trace_n > 0) else "tozeroy",
+                    line={"width": 1},
+                )
+            )
             trace_n += 1
 
     apply_theme(fig, resolved_theme, title=title or smart_title(x, y_cols[0]))
