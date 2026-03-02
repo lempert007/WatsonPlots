@@ -63,11 +63,9 @@ def sync(
     _require_column(df1, col1)
     _require_column(df2, col2)
 
-    for column, df, label in [(col1, df1, "df1"), (col2, df2, "df2")]:
+    for column, df in [(col1, df1), (col2, df2)]:
         if df[column].std() == 0:
-            raise ConstantColumnError(
-                f"column '{column}' in {label} is constant — cannot use for sync"
-            )
+            raise ConstantColumnError(f"column '{column}' is constant — cannot use for sync")
 
     timestamps_1 = _parse_time(df1, time1, time_format)
     timestamps_2 = _parse_time(df2, time2, time_format)
