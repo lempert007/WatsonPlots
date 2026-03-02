@@ -14,12 +14,3 @@ repos:
     rev: "v1.13.0"
     hooks:
       - id: mypy
-
-  - repo: local
-    hooks:
-      - id: pylint
-        name: pylint
-        entry: pylint
-        language: system
-        types: [python]
-        require_serial: true

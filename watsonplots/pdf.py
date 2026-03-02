@@ -36,6 +36,18 @@ def _render_batch(charts: list[Chart], override_theme: Theme | None = None) -> b
         subfig.update_xaxes(row=row, col=1, **_axis_props(fig.layout.xaxis))
         subfig.update_yaxes(row=row, col=1, **_axis_props(fig.layout.yaxis))
 
+        yref = "y" if row == 1 else f"y{row}"
+        for shape in fig.layout.shapes:
+            d = {k: v for k, v in shape.to_plotly_json().items() if v is not None}
+            if d.get("yref") == "y":
+                d["yref"] = yref
+            subfig.add_shape(**d)
+        for ann in fig.layout.annotations:
+            d = {k: v for k, v in ann.to_plotly_json().items() if v is not None}
+            if d.get("yref") == "y":
+                d["yref"] = yref
+            subfig.add_annotation(**d)
+
     subfig.update_layout(
         paper_bgcolor=base.paper_bgcolor or "#0d1117",
         plot_bgcolor=base.plot_bgcolor or "#161b22",

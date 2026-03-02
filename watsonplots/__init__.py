@@ -37,6 +37,7 @@ from .chart import Chart
 from .charts import area, histogram, line, scatter
 from .pdf import save_pdf
 from .report import save_html
+from .sync import sync
 from .themes import Theme, get_theme
 
 __all__ = [
@@ -50,6 +51,7 @@ __all__ = [
     "get_theme",
     "save_pdf",
     "save_html",
+    "sync",
 ]
 
 __version__ = "0.1.0"

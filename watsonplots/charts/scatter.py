@@ -22,20 +22,24 @@ def scatter(
     opacity: float = 0.8,
     show_legend: bool = True,
     hover_data: list[str] | None = None,
+    gradient_colors: tuple[str, str] | None = None,
 ) -> Chart:
     """
     Create a scatter plot (or bubble chart when size= is provided).
 
     Parameters
     ----------
-    data:       DataFrame, coercible, or a list of DataFrames.
-    x:          Column for x-axis
-    y:          Column for y-axis
-    color:      Column name (single DataFrame) or list of labels (list of DataFrames).
-    size:       Column whose values control marker diameter (bubble mode).
-                Values are auto-scaled to an 8–60px range.
-    hover_data: Extra columns to include in hover tooltips.
-    opacity:    Marker opacity (0.0–1.0).
+    data:             DataFrame, coercible, or a list of DataFrames.
+    x:                Column for x-axis
+    y:                Column for y-axis
+    color:            Column name (single DataFrame) or list of labels (list of DataFrames).
+                      Ignored when gradient_colors is set.
+    size:             Column whose values control marker diameter (bubble mode).
+                      Values are auto-scaled to an 8–60px range.
+    hover_data:       Extra columns to include in hover tooltips.
+    opacity:          Marker opacity (0.0–1.0).
+    gradient_colors:  When provided as (start_color, end_color) hex strings, each point is
+                      coloured by its row index along the gradient instead of grouping by color=.
     """
     resolved_theme = get_theme(theme)
     groups, ref_df = resolve_groups(data, color)
@@ -69,8 +73,53 @@ def scatter(
         )
 
     fig = go.Figure()
-    for sub_df, group_label in groups:
-        fig.add_trace(_make_trace(sub_df, group_label or y))
+
+    if gradient_colors is not None:
+        merged_df = pd.concat([sub_df for sub_df, _ in groups], ignore_index=True)
+        start_color, end_color = gradient_colors
+        n = len(merged_df)
+        marker: dict = {
+            "opacity": opacity,
+            "color": list(range(n)),
+            "colorscale": [[0, start_color], [1, end_color]],
+            "showscale": True,
+            "colorbar": {
+                "tickvals": [0, n - 1],
+                "ticktext": ["First", "Last"],
+                "thickness": 12,
+                "len": 0.5,
+            },
+        }
+        if size is not None:
+            s = merged_df[size].astype(float)
+            rng = s.max() - s.min()
+            marker["size"] = (8 + 52 * (s - s.min()) / (rng if rng > 0 else 1)).tolist()
+            marker["sizemode"] = "diameter"
+        if hover_data:
+            customdata = merged_df[hover_data].values
+            hovertemplate = (
+                f"<b>{x}</b>: %{{x}}<br><b>{y}</b>: %{{y}}"
+                + "".join(
+                    f"<br><b>{col}</b>: %{{customdata[{i}]}}" for i, col in enumerate(hover_data)
+                )
+                + "<extra></extra>"
+            )
+        else:
+            customdata, hovertemplate = None, None
+        fig.add_trace(
+            go.Scatter(
+                x=merged_df[x],
+                y=merged_df[y],
+                mode="markers",
+                name=y,
+                marker=marker,
+                customdata=customdata,
+                hovertemplate=hovertemplate,
+            )
+        )
+    else:
+        for sub_df, group_label in groups:
+            fig.add_trace(_make_trace(sub_df, group_label or y))
 
     apply_theme(fig, resolved_theme, title=title or smart_title(x, y))
     fig.update_xaxes(title_text=xlabel or x, tickformat=tick_format_for(ref_df[x]))
