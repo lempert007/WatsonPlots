@@ -44,6 +44,13 @@ def scatter(
     resolved_theme = get_theme(theme)
     groups, ref_df = resolve_groups(data, color)
 
+    # Convert datetime x-axis to elapsed seconds
+    is_time = pd.api.types.is_datetime64_any_dtype(ref_df[x])
+    t0 = ref_df[x].min() if is_time else None
+
+    def xval(df: pd.DataFrame) -> pd.Series:
+        return (df[x] - t0).dt.total_seconds() if is_time else df[x]
+
     def _make_trace(sub_df: pd.DataFrame, name: str) -> go.Scatter:
         marker: dict = {"opacity": opacity}
         if size is not None:
@@ -63,7 +70,7 @@ def scatter(
         else:
             customdata, hovertemplate = None, None
         return go.Scatter(
-            x=sub_df[x],
+            x=xval(sub_df),
             y=sub_df[y],
             mode="markers",
             name=name,
@@ -108,7 +115,7 @@ def scatter(
             customdata, hovertemplate = None, None
         fig.add_trace(
             go.Scatter(
-                x=merged_df[x],
+                x=xval(merged_df),
                 y=merged_df[y],
                 mode="markers",
                 name=y,
@@ -121,8 +128,9 @@ def scatter(
         for sub_df, group_label in groups:
             fig.add_trace(_make_trace(sub_df, group_label or y))
 
-    apply_theme(fig, resolved_theme, title=title or smart_title(x, y))
-    fig.update_xaxes(title_text=xlabel or x, tickformat=tick_format_for(ref_df[x]))
+    x_label = xlabel or ("Time (s)" if is_time else x)
+    apply_theme(fig, resolved_theme, title=title or smart_title(x_label, y))
+    fig.update_xaxes(title_text=x_label, tickformat=tick_format_for(xval(ref_df)))
     fig.update_yaxes(title_text=ylabel or y, tickformat=tick_format_for(ref_df[y]))
     fig.update_layout(showlegend=show_legend if len(fig.data) > 1 else False)
     return Chart(fig, resolved_theme)

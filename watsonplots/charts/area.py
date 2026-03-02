@@ -37,14 +37,22 @@ def area(
     y_cols = [y] if isinstance(y, str) else list(y)
     groups, ref_df = resolve_groups(data, color)
 
+    # Convert datetime x-axis to elapsed seconds
+    is_time = pd.api.types.is_datetime64_any_dtype(ref_df[x])
+    t0 = ref_df[x].min() if is_time else None
+
+    def with_elapsed(df: pd.DataFrame) -> pd.DataFrame:
+        return df.assign(**{x: (df[x] - t0).dt.total_seconds()}) if is_time else df
+
     fig = go.Figure()
     trace_count = 0
     for sub_df, group_label in groups:
+        display_df = with_elapsed(sub_df).reset_index(drop=True)
         for y_col in y_cols:
             if segment_color:
                 _add_segmented_traces(
                     fig,
-                    sub_df.reset_index(drop=True),
+                    display_df,
                     x,
                     y_col,
                     segment_color,
@@ -54,8 +62,8 @@ def area(
                 fill = "tonexty" if (stacked and trace_count > 0) else "tozeroy"
                 fig.add_trace(
                     go.Scatter(
-                        x=sub_df[x],
-                        y=sub_df[y_col],
+                        x=display_df[x],
+                        y=display_df[y_col],
                         mode="lines",
                         name=group_label or y_col,
                         fill=fill,
@@ -64,8 +72,9 @@ def area(
                 )
             trace_count += 1
 
-    apply_theme(fig, resolved_theme, title=title or smart_title(x, y_cols[0]))
-    fig.update_xaxes(type=infer_axis_type(ref_df[x]), title_text=xlabel or x)
+    x_label = xlabel or ("Time (s)" if is_time else x)
+    apply_theme(fig, resolved_theme, title=title or smart_title(x_label, y_cols[0]))
+    fig.update_xaxes(type=infer_axis_type(with_elapsed(ref_df)[x]), title_text=x_label)
     fig.update_yaxes(title_text=ylabel or (y if isinstance(y, str) else ""))
     fig.update_layout(showlegend=show_legend if len(fig.data) > 1 else False)
     return Chart(fig, resolved_theme)

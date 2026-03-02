@@ -28,7 +28,6 @@ def apply_theme(fig: go.Figure, theme: Theme, title: str = "") -> go.Figure:
             showgrid=theme.show_grid,
             zerolinecolor=theme.zerolinecolor,
             linecolor=theme.linecolor,
-            showticklabels=False,
         ),
         yaxis=dict(
             gridcolor=theme.gridcolor,

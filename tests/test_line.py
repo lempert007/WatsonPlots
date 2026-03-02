@@ -58,7 +58,8 @@ def test_line_title(time_df):
 def test_line_auto_title(time_df):
     fig = wp.line(time_df, x="date", y="revenue").to_fig()
     assert "revenue" in fig.layout.title.text
-    assert "date" in fig.layout.title.text
+    # datetime x uses "Time (s)" instead of the column name
+    assert "Time (s)" in fig.layout.title.text
 
 
 def test_line_xlabel(time_df):

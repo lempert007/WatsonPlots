@@ -8,6 +8,8 @@ from .consts import A4_H, A4_W, SKIP_AXIS_KEYS
 from .layout import apply_theme
 from .themes import Theme, get_theme
 
+_PDF_MARGIN = {"l": 80, "r": 30, "t": 60, "b": 60}
+
 
 def _axis_props(axis) -> dict:
     return {
@@ -24,6 +26,9 @@ def _render_batch(charts: list[Chart], override_theme: Theme | None = None) -> b
             apply_theme(fig, override_theme, title=fig.layout.title.text or "")
 
     if len(charts) == 1:
+        figs[0].update_layout(margin=_PDF_MARGIN)
+        figs[0].update_xaxes(automargin=False)
+        figs[0].update_yaxes(automargin=False)
         return figs[0].to_image(format="pdf", width=A4_W, height=A4_H)
 
     n = len(charts)
@@ -52,10 +57,12 @@ def _render_batch(charts: list[Chart], override_theme: Theme | None = None) -> b
         paper_bgcolor=base.paper_bgcolor or "#0d1117",
         plot_bgcolor=base.plot_bgcolor or "#161b22",
         font=base.font.to_plotly_json(),
-        margin={"l": 60, "r": 30, "t": 30, "b": 30},
+        margin={"l": _PDF_MARGIN["l"], "r": _PDF_MARGIN["r"], "t": 30, "b": 30},
     )
     if base.colorway:
         subfig.update_layout(colorway=list(base.colorway))
+    subfig.update_xaxes(automargin=False)
+    subfig.update_yaxes(automargin=False)
 
     return subfig.to_image(format="pdf", width=A4_W, height=A4_H)
 

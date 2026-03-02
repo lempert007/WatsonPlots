@@ -69,9 +69,9 @@ scatter_chart = wp.scatter(
 )
 
 all_charts = [height_chart, voltage_chart, util_chart, scatter_chart]
-wp.save_pdf(all_charts, "examples/output/report.pdf", per_page=2, theme="watson")
+wp.save_pdf(all_charts, "examples/output/report.pdf", per_page=2, theme="light")
 print("Saved report.pdf  (2 pages, 2 charts each, watson theme)")
 
-wp.save_html(all_charts, "examples/output/report.html", title="Drone Flight Report")
+wp.save_html(all_charts, "examples/output/report.html", title="Drone Flight Report", theme="watson")
 
 print("\nAll done. Open examples/output/ to explore.")
