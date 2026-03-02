@@ -2,12 +2,7 @@ import warnings
 
 import pandas as pd
 
-from .exceptions import (
-    ColumnNotFoundError,
-    ConstantColumnError,
-    NoTemporalOverlapError,
-    TimeParseError,
-)
+from .exceptions import ColumnNotFoundError, ConstantColumnError, TimeParseError
 
 # Both signals are resampled to this uniform grid before cross-correlation.
 # Finer resolution catches smaller time offsets; 100 ms is a practical default.
@@ -70,13 +65,6 @@ def sync(
 
     t1 = _parse_time(df1, time1, time_format)
     t2 = _parse_time(df2, time2, time_format)
-
-    if t1.max() <= t2.min() or t1.min() >= t2.max():
-        raise NoTemporalOverlapError(
-            f"time ranges do not overlap — logs may not be from the same session.\n"
-            f"  df1: {t1.min()} → {t1.max()}\n"
-            f"  df2: {t2.min()} → {t2.max()}"
-        )
 
     # Attach parsed UTC timestamps as the Series index (required for resample in _compute_lag)
     s1 = pd.Series(df1[col1].to_numpy(), index=t1)
