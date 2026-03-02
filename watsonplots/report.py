@@ -91,5 +91,5 @@ def _render_chart(chart: Chart, index: int, offline: bool, theme: Theme | None) 
 
     # Copy the figure so the original Chart object is never mutated
     fig = go.Figure(chart.to_fig().to_dict())
-    apply_theme(fig, theme)
+    apply_theme(fig, theme, title=fig.layout.title.text or "")
     return fig.to_html(full_html=False, include_plotlyjs=include_plotlyjs)

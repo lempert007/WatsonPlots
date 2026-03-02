@@ -12,7 +12,3 @@ class ConstantColumnError(SyncError):
 
 class TimeParseError(SyncError):
     """A timestamp column could not be parsed."""
-
-
-class NoTemporalOverlapError(SyncError):
-    """The two log time ranges do not overlap."""

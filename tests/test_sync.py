@@ -34,7 +34,7 @@ def _make_logs(lag_seconds: float = 5.0, length: int = 200, seed: int = 42):
 
 def test_sync_preserves_row_counts():
     df1, df2 = _make_logs()
-    out1, out2 = wp.sync(df1, df2, common_column="voltage", time1="time", time2="time")
+    out1, out2 = wp.sync(df1, df2, common_columns="voltage", time1="time", time2="time")
     assert len(out1) == len(df1)
     assert len(out2) == len(df2)
 
@@ -42,7 +42,7 @@ def test_sync_preserves_row_counts():
 def test_sync_other_columns_untouched():
     df1, df2 = _make_logs()
     df1["extra"] = 99
-    out1, _ = wp.sync(df1, df2, common_column="voltage", time1="time", time2="time")
+    out1, _ = wp.sync(df1, df2, common_columns="voltage", time1="time", time2="time")
     assert (out1["extra"] == 99).all()
 
 
@@ -52,7 +52,7 @@ def test_sync_timezone_mismatch_does_not_crash():
     df2["time"] = (pd.to_datetime(df2["time"], utc=True) + pd.Timedelta(hours=5)).dt.strftime(
         TIME_FORMAT
     )
-    out1, out2 = wp.sync(df1, df2, common_column="voltage", time1="time", time2="time")
+    out1, out2 = wp.sync(df1, df2, common_columns="voltage", time1="time", time2="time")
     assert len(out1) == len(df1)
     assert len(out2) == len(df2)
 
@@ -60,21 +60,21 @@ def test_sync_timezone_mismatch_does_not_crash():
 def test_sync_missing_time_col():
     df1, df2 = _make_logs()
     with pytest.raises(ColumnNotFoundError, match="time column 'bad'"):
-        wp.sync(df1, df2, common_column="voltage", time1="bad", time2="time")
+        wp.sync(df1, df2, common_columns="voltage", time1="bad", time2="time")
 
 
 def test_sync_constant_column_raises():
     df1, df2 = _make_logs()
     df1["voltage"] = 5.0
     with pytest.raises(ConstantColumnError, match="constant"):
-        wp.sync(df1, df2, common_column="voltage", time1="time", time2="time")
+        wp.sync(df1, df2, common_columns="voltage", time1="time", time2="time")
 
 
 def test_sync_bad_time_format_raises():
     df1, df2 = _make_logs()
     df1["time"] = "not-a-date"
     with pytest.raises(TimeParseError, match="cannot parse"):
-        wp.sync(df1, df2, common_column="voltage", time1="time", time2="time")
+        wp.sync(df1, df2, common_columns="voltage", time1="time", time2="time")
 
 
 def test_sync_low_correlation_warns():
@@ -88,4 +88,4 @@ def test_sync_low_correlation_warns():
         {"time2": time_range.strftime(TIME_FORMAT), "voltage_2": random_generator.normal(0, 1, n)}
     )
     with pytest.warns(UserWarning, match="low correlation"):
-        wp.sync(df1, df2, common_column=("voltage_1", "voltage_2"), time1="time1", time2="time2")
+        wp.sync(df1, df2, common_columns=("voltage_1", "voltage_2"), time1="time1", time2="time2")

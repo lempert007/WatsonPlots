@@ -19,11 +19,22 @@ def _axis_props(axis) -> dict:
     }
 
 
-def _remap_yref(plotly_obj, new_yref: str) -> dict:
-    """Serialize a Plotly shape or annotation and remap 'y' yref to the subplot's axis."""
+def _remap_axis_refs(plotly_obj, subplot_row: int) -> dict:
+    """Serialize a Plotly shape or annotation and remap axis refs to the correct subplot row.
+
+    add_vrect → xref="x", yref="paper"  (xref must target the correct x-axis;
+                                          yref="paper" must become "y{n} domain"
+                                          so the band only spans its own subplot)
+    add_hline → xref="paper", yref="y"  (yref must target the correct y-axis)
+    """
     props = {key: value for key, value in plotly_obj.to_plotly_json().items() if value is not None}
+    suffix = "" if subplot_row == 1 else str(subplot_row)
+    if props.get("xref") == "x":
+        props["xref"] = f"x{suffix}"
     if props.get("yref") == "y":
-        props["yref"] = new_yref
+        props["yref"] = f"y{suffix}"
+    if props.get("yref") == "paper":
+        props["yref"] = f"y{suffix} domain"
     return props
 
 
@@ -43,7 +54,8 @@ def _render_batch(charts: list[Chart], override_theme: Theme | None = None) -> b
 
     chart_count = len(charts)
     first_layout = figs[0].layout
-    subfig = make_subplots(rows=chart_count, cols=1, vertical_spacing=0.06)
+    titles = [fig.layout.title.text or "" for fig in figs]
+    subfig = make_subplots(rows=chart_count, cols=1, vertical_spacing=0.10, subplot_titles=titles)
 
     for subplot_row, fig in enumerate(figs, 1):
         for trace in fig.data:
@@ -51,11 +63,16 @@ def _render_batch(charts: list[Chart], override_theme: Theme | None = None) -> b
         subfig.update_xaxes(row=subplot_row, col=1, **_axis_props(fig.layout.xaxis))
         subfig.update_yaxes(row=subplot_row, col=1, **_axis_props(fig.layout.yaxis))
 
-        y_axis_ref = "y" if subplot_row == 1 else f"y{subplot_row}"
         for shape in fig.layout.shapes:
-            subfig.add_shape(**_remap_yref(shape, y_axis_ref))
+            subfig.add_shape(**_remap_axis_refs(shape, subplot_row))
         for annotation in fig.layout.annotations:
-            subfig.add_annotation(**_remap_yref(annotation, y_axis_ref))
+            subfig.add_annotation(**_remap_axis_refs(annotation, subplot_row))
+
+    # Style subplot title annotations with the theme font
+    font_color = first_layout.font.color or DARK.font_color
+    font_family = first_layout.font.family or DARK.font_family
+    for annotation in subfig.layout.annotations:
+        annotation.update(font=dict(color=font_color, family=font_family))
 
     subfig.update_layout(
         paper_bgcolor=first_layout.paper_bgcolor or DARK.paper_bgcolor,

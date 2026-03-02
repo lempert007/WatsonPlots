@@ -972,17 +972,10 @@ name = "watsonplots"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "kaleido" },
     { name = "pandas" },
     { name = "plotly" },
-    { name = "scipy" },
-]
-
-[package.optional-dependencies]
-pdf = [
-    { name = "kaleido" },
     { name = "pypdf" },
-]
-sync = [
     { name = "scipy" },
 ]
 
@@ -999,14 +992,12 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "kaleido", marker = "extra == 'pdf'", specifier = ">=0.2" },
+    { name = "kaleido", specifier = ">=0.2" },
     { name = "pandas", specifier = ">=2.0" },
     { name = "plotly", specifier = ">=5.0" },
-    { name = "pypdf", marker = "extra == 'pdf'", specifier = ">=4.0" },
-    { name = "scipy", specifier = ">=1.17.1" },
-    { name = "scipy", marker = "extra == 'sync'", specifier = ">=1.0" },
+    { name = "pypdf", specifier = ">=4.0" },
+    { name = "scipy", specifier = ">=1.0" },
 ]
-provides-extras = ["pdf", "sync"]
 
 [package.metadata.requires-dev]
 dev = [

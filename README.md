@@ -2,24 +2,10 @@
 
 Easy, high-quality interactive plots powered by Plotly.
 
-```python
-import watsonplots as wp
-import pandas as pd
-
-df = pd.read_csv("sales.csv", parse_dates=["date"])
-wp.line(df, x="date", y="revenue", color="region", theme="watson").show()
-```
-
 ## Install
 
 ```bash
 pip install watsonplots
-```
-
-Development:
-
-```bash
-uv sync --group dev
 ```
 
 ## Chart types
@@ -54,9 +40,6 @@ wp.area(df, x="date", y=["revenue", "cost"], stacked=True, theme="dark").show()
 ### Scatter
 
 ```python
-wp.scatter(df, x="age", y="salary", color="dept",
-           hover_data=["exp_years"], theme="light").show()
-
 # Bubble chart (size encodes a third variable)
 wp.scatter(df, x="age", y="salary", size="exp_years", color="dept").show()
 ```
@@ -83,7 +66,7 @@ Align two time-series DataFrames that share a common signal but have different c
 ```python
 df1_synced, df2_synced = wp.sync(
     df1, df2,
-    common_column=("battery_v", "bus_voltage_v"),
+    common_columns=("battery_v", "bus_voltage_v"),
     time1="timestamp",
     time2="device_timestamp",
 )

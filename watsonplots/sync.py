@@ -17,7 +17,7 @@ def sync(
     df1: pd.DataFrame,
     df2: pd.DataFrame,
     *,
-    common_column: str | tuple[str, str],
+    common_columns: str | tuple[str, str],
     time1: str,
     time2: str,
     time_format: str = "ISO8601",
@@ -42,7 +42,7 @@ def sync(
 
     Returns
     -------
-    (df1, df2) — both with UTC-normalized timestamp columns, df2 shifted by the
+    (df1, df2) — both with normalized timestamp columns, df2 shifted by the
     discovered lag. All other columns are untouched.
 
     Example
@@ -54,7 +54,9 @@ def sync(
         time2="jetson_timestamp_local",
     )
     """
-    col1, col2 = (common_column, common_column) if isinstance(common_column, str) else common_column
+    col1, col2 = (
+        (common_columns, common_columns) if isinstance(common_columns, str) else common_columns
+    )
 
     _require_column(df1, time1, role="time", df_name="df1")
     _require_column(df2, time2, role="time", df_name="df2")
@@ -70,7 +72,6 @@ def sync(
     timestamps_1 = _parse_time(df1, time1, time_format)
     timestamps_2 = _parse_time(df2, time2, time_format)
 
-    # Attach parsed UTC timestamps as the Series index (required for resample in _compute_lag)
     indexed_signal_1 = pd.Series(df1[col1].to_numpy(), index=timestamps_1)
     indexed_signal_2 = pd.Series(df2[col2].to_numpy(), index=timestamps_2)
     lag = _compute_lag(indexed_signal_1, indexed_signal_2, col1, col2)

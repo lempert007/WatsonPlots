@@ -3,15 +3,15 @@ import plotly.graph_objects as go
 
 from ..chart import Chart
 from ..consts import DEFAULT_THEME, DataFormats
-from ..defaults import (
+from ..layout import apply_theme
+from ..themes import Theme, get_theme
+from ..utils import (
     infer_axis_type,
     make_elapsed_xval,
     resolve_groups,
     smart_title,
     tick_format_for,
 )
-from ..layout import apply_theme
-from ..themes import Theme, get_theme
 
 _BUBBLE_SIZE_MIN_PX = 8
 _BUBBLE_SIZE_MAX_PX = 60
@@ -22,6 +22,7 @@ def scatter(
     *,
     x: str,
     y: str,
+    labels: list[str] | None = None,
     size: str | None = None,
     title: str | None = None,
     xlabel: str | None = None,
@@ -29,7 +30,6 @@ def scatter(
     theme: str | Theme = DEFAULT_THEME,
     opacity: float = 0.8,
     show_legend: bool = True,
-    hover_data: list[str] | None = None,
     gradient_colors: tuple[str, str] | None = None,
 ) -> Chart:
     """
@@ -40,31 +40,19 @@ def scatter(
     data:             DataFrame, coercible, or a list of DataFrames.
     x:                Column for x-axis
     y:                Column for y-axis
+    labels:           Trace names when data is a list of DataFrames.
     size:             Column whose values control marker diameter (bubble mode).
                       Values are auto-scaled to an 8–60px range.
-    hover_data:       Extra columns to include in hover tooltips.
     opacity:          Marker opacity (0.0–1.0)
     gradient_colors:  When provided as (start_color, end_color) hex strings, each point is
                       coloured by its row index along the gradient instead of grouping by color=.
     """
     resolved_theme = get_theme(theme)
-    groups, ref_df = resolve_groups(data)
+    groups, ref_df = resolve_groups(data, labels)
     is_time, xval = make_elapsed_xval(x, ref_df[x])
 
-    def _make_trace(group_df: pd.DataFrame, name: str) -> go.Scatter:
-        marker: dict = {"opacity": opacity}
-        if size is not None:
-            marker["size"] = _scale_bubble_sizes(group_df[size].astype(float))
-            marker["sizemode"] = "diameter"
-        return go.Scatter(
-            x=xval(group_df),
-            y=group_df[y],
-            mode="markers",
-            name=name,
-            marker=marker,
-            customdata=group_df[hover_data].values if hover_data else None,
-            hovertemplate=_build_hover_template(x, y, hover_data) if hover_data else None,
-        )
+    all_hover_cols = [size] if size else []
+    hover_template = _build_hover_template(x, y, all_hover_cols) if all_hover_cols else None
 
     fig = go.Figure()
 
@@ -94,13 +82,30 @@ def scatter(
                 mode="markers",
                 name=y,
                 marker=marker,
-                customdata=merged_df[hover_data].values if hover_data else None,
-                hovertemplate=_build_hover_template(x, y, hover_data) if hover_data else None,
+                customdata=merged_df[all_hover_cols].values if all_hover_cols else None,
+                hovertemplate=hover_template,
             )
         )
     else:
         for group_df, group_label in groups:
-            fig.add_trace(_make_trace(group_df, group_label or y))
+            fixed_marker: dict = {"opacity": opacity}
+            if size is not None:
+                fixed_marker["size"] = _scale_bubble_sizes(group_df[size].astype(float))
+                fixed_marker["sizemode"] = "diameter"
+            fig.add_trace(
+                go.Scatter(
+                    x=xval(group_df),
+                    y=group_df[y],
+                    mode="markers",
+                    name=group_label or y,
+                    marker=fixed_marker,
+                    customdata=group_df[all_hover_cols].values if all_hover_cols else None,
+                    hovertemplate=hover_template,
+                )
+            )
+
+    if size is not None:
+        _add_size_legend(fig, ref_df[size].astype(float), size, opacity)
 
     x_label = xlabel or ("Time (s)" if is_time else x)
     apply_theme(fig, resolved_theme, title=title or smart_title(x_label, y))
@@ -119,6 +124,31 @@ def _scale_bubble_sizes(series: pd.Series) -> list:
     value_range = series.max() - series.min()
     normalized = (series - series.min()) / (value_range if value_range > 0 else 1)
     return (_BUBBLE_SIZE_MIN_PX + (_BUBBLE_SIZE_MAX_PX - _BUBBLE_SIZE_MIN_PX) * normalized).tolist()
+
+
+def _add_size_legend(
+    fig: go.Figure,
+    size_series: pd.Series,
+    size_col: str,
+    opacity: float,
+) -> None:
+    """Add three invisible legend traces showing min / mid / max bubble sizes."""
+    min_val, max_val = size_series.min(), size_series.max()
+    representative = [min_val, (min_val + max_val) / 2, max_val]
+    scaled_sizes = _scale_bubble_sizes(pd.Series(representative))
+    for index, (val, scaled) in enumerate(zip(representative, scaled_sizes)):
+        fig.add_trace(
+            go.Scatter(
+                x=[None],
+                y=[None],
+                mode="markers",
+                name=f"{val:.1f}",
+                legendgroup=size_col,
+                legendgrouptitle={"text": size_col} if index == 0 else None,
+                marker={"size": scaled, "sizemode": "diameter", "opacity": opacity},
+                showlegend=True,
+            )
+        )
 
 
 def _build_hover_template(x: str, y: str, hover_data: list[str]) -> str:

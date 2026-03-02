@@ -13,7 +13,6 @@ Chart functions (all return a Chart object)
 -------------------------------------------
     wp.line(data, *, x, y, title, xlabel, ylabel, theme, mode, smooth, show_legend)
     wp.area(data, *, x, y, title, xlabel, ylabel, theme, stacked, show_legend)
-    wp.scatter(data, *, x, y, size, title, xlabel, ylabel, theme, opacity, show_legend, hover_data)
     wp.histogram(data, *, x, bins, title, xlabel, ylabel, theme, barmode, opacity, show_legend)
 
 Chart object methods
