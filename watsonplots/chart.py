@@ -4,6 +4,10 @@ import plotly.graph_objects as go
 
 from .themes import Theme
 
+_THRESHOLD_COLOR = "red"
+_THRESHOLD_DASH = "dash"
+_THRESHOLD_WIDTH = 1.5
+
 
 class Chart:
     """
@@ -52,12 +56,13 @@ class Chart:
                0 (default) draws a flat horizontal line.
         label: optional annotation text shown at the right end of the line.
         """
+        line_style = {"color": _THRESHOLD_COLOR, "dash": _THRESHOLD_DASH, "width": _THRESHOLD_WIDTH}
         if slope == 0:
             self._fig.add_hline(
                 y=value,
-                line_color="red",
-                line_dash="dash",
-                line_width=1.5,
+                line_color=_THRESHOLD_COLOR,
+                line_dash=_THRESHOLD_DASH,
+                line_width=_THRESHOLD_WIDTH,
                 annotation_text=label,
                 annotation_position="top right" if label else None,
             )
@@ -70,7 +75,7 @@ class Chart:
                 y1=value + slope,
                 xref="paper",
                 yref="y",
-                line={"color": "red", "dash": "dash", "width": 1.5},
+                line=line_style,
             )
             if label:
                 self._fig.add_annotation(
@@ -81,7 +86,7 @@ class Chart:
                     text=label,
                     showarrow=False,
                     xanchor="right",
-                    font={"color": "red"},
+                    font={"color": _THRESHOLD_COLOR},
                 )
         return self
 

@@ -15,7 +15,7 @@ class Theme:
     linecolor: str
     show_grid: bool
     colorway: list[str]
-    margin: dict
+    margin: dict[str, int]
     legend_bgcolor: str
     legend_bordercolor: str
     legend_borderwidth: int

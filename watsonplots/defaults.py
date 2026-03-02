@@ -5,15 +5,17 @@ import pandas as pd
 
 from .consts import DataFormats
 
+_LARGE_NUMBER_THRESHOLD = 10_000
+
 
 class AxisType(str, Enum):
     DATE = "date"
-    NUMERIC = "-"
+    NUMERIC = "-"  # Plotly's auto-detect sentinel; resolves to linear for numeric data
     CATEGORY = "category"
 
 
 class TickFormat(str, Enum):
-    LARGE_NUMBER = ",.0f"
+    LARGE_NUMBER = ",.0f"  # thousands separator, no decimals
 
 
 AXIS_TYPE_CHECKS: list[tuple[Callable, AxisType]] = [
@@ -21,11 +23,13 @@ AXIS_TYPE_CHECKS: list[tuple[Callable, AxisType]] = [
     (pd.api.types.is_numeric_dtype, AxisType.NUMERIC),
 ]
 
+
+def _is_large_numeric(series: pd.Series) -> bool:
+    return pd.api.types.is_numeric_dtype(series) and series.abs().max() >= _LARGE_NUMBER_THRESHOLD
+
+
 TICK_FORMAT_CHECKS: list[tuple[Callable, TickFormat]] = [
-    (
-        lambda s: pd.api.types.is_numeric_dtype(s) and s.abs().max() >= 10_000,
-        TickFormat.LARGE_NUMBER,
-    ),
+    (_is_large_numeric, TickFormat.LARGE_NUMBER),
 ]
 
 
@@ -45,35 +49,38 @@ def smart_title(x: str | None, y: str | None) -> str:
 
 
 def tick_format_for(series: pd.Series) -> TickFormat | None:
-    """Return a Plotly tickformat for the series, or None."""
+    """Return a Plotly tickformat string for the series, or None."""
     for check, fmt in TICK_FORMAT_CHECKS:
         if check(series):
             return fmt
     return None
 
 
+def make_elapsed_xval(
+    x: str, series: pd.Series
+) -> tuple[bool, Callable[[pd.DataFrame], pd.Series]]:
+    """Build an x-value extractor that converts datetime columns to elapsed seconds.
+
+    Returns (is_time, xval) where xval(df) → pd.Series.
+    Non-datetime columns are returned as-is.
+    """
+    if not pd.api.types.is_datetime64_any_dtype(series):
+        return False, lambda df: df[x]
+    t0 = series.min()
+    return True, lambda df: (df[x] - t0).dt.total_seconds()
+
+
 def resolve_groups(
     data: DataFormats,
-    color: str | list[str] | None,
 ) -> tuple[list[tuple[pd.DataFrame, str | None]], pd.DataFrame]:
     """
-    Resolve any supported data input into ([(sub_df, label), ...], ref_df).
+    Resolve any supported data input into ([(group_df, label), ...], ref_df).
 
-    label is None when there is no split — callers fall back to the column name.
-    Works for: list of DataFrames, single DataFrame with color column, plain DataFrame.
+    label is None for a single DataFrame — callers fall back to the column name.
+    A list of DataFrames produces one trace per DataFrame, auto-labeled by index.
     """
     if isinstance(data, list) and data and isinstance(data[0], pd.DataFrame):
-        if isinstance(color, str):
-            raise ValueError(
-                "color must be a list of labels (not a column name) when data is a list of DataFrames"
-            )
-        labels = color if isinstance(color, list) else [str(i) for i in range(len(data))]
-        if len(labels) != len(data):
-            raise ValueError(
-                f"color has {len(labels)} label(s) but data has {len(data)} DataFrames"
-            )
+        labels = [str(index) for index in range(len(data))]
         return list(zip(data, labels)), data[0]
     df = pd.DataFrame(data)
-    if color is not None:
-        return [(g, str(v)) for v, g in df.groupby(color, sort=False)], df
     return [(df, None)], df

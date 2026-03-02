@@ -4,17 +4,27 @@ import os
 from plotly.subplots import make_subplots
 
 from .chart import Chart
-from .consts import A4_H, A4_W, SKIP_AXIS_KEYS
+from .consts import A4_HEIGHT, A4_WIDTH, SKIP_AXIS_KEYS
 from .layout import apply_theme
-from .themes import Theme, get_theme
+from .themes import DARK, Theme, get_theme
 
 _PDF_MARGIN = {"l": 80, "r": 30, "t": 60, "b": 60}
 
 
 def _axis_props(axis) -> dict:
     return {
-        k: v for k, v in axis.to_plotly_json().items() if k not in SKIP_AXIS_KEYS and v is not None
+        key: value
+        for key, value in axis.to_plotly_json().items()
+        if key not in SKIP_AXIS_KEYS and value is not None
     }
+
+
+def _remap_yref(plotly_obj, new_yref: str) -> dict:
+    """Serialize a Plotly shape or annotation and remap 'y' yref to the subplot's axis."""
+    props = {key: value for key, value in plotly_obj.to_plotly_json().items() if value is not None}
+    if props.get("yref") == "y":
+        props["yref"] = new_yref
+    return props
 
 
 def _render_batch(charts: list[Chart], override_theme: Theme | None = None) -> bytes:
@@ -29,42 +39,36 @@ def _render_batch(charts: list[Chart], override_theme: Theme | None = None) -> b
         figs[0].update_layout(margin=_PDF_MARGIN)
         figs[0].update_xaxes(automargin=False)
         figs[0].update_yaxes(automargin=False)
-        return figs[0].to_image(format="pdf", width=A4_W, height=A4_H)
+        return figs[0].to_image(format="pdf", width=A4_WIDTH, height=A4_HEIGHT)
 
-    n = len(charts)
-    base = figs[0].layout
-    subfig = make_subplots(rows=n, cols=1, vertical_spacing=0.06)
+    chart_count = len(charts)
+    first_layout = figs[0].layout
+    subfig = make_subplots(rows=chart_count, cols=1, vertical_spacing=0.06)
 
-    for row, fig in enumerate(figs, 1):
+    for subplot_row, fig in enumerate(figs, 1):
         for trace in fig.data:
-            subfig.add_trace(trace, row=row, col=1)
-        subfig.update_xaxes(row=row, col=1, **_axis_props(fig.layout.xaxis))
-        subfig.update_yaxes(row=row, col=1, **_axis_props(fig.layout.yaxis))
+            subfig.add_trace(trace, row=subplot_row, col=1)
+        subfig.update_xaxes(row=subplot_row, col=1, **_axis_props(fig.layout.xaxis))
+        subfig.update_yaxes(row=subplot_row, col=1, **_axis_props(fig.layout.yaxis))
 
-        yref = "y" if row == 1 else f"y{row}"
+        y_axis_ref = "y" if subplot_row == 1 else f"y{subplot_row}"
         for shape in fig.layout.shapes:
-            d = {k: v for k, v in shape.to_plotly_json().items() if v is not None}
-            if d.get("yref") == "y":
-                d["yref"] = yref
-            subfig.add_shape(**d)
-        for ann in fig.layout.annotations:
-            d = {k: v for k, v in ann.to_plotly_json().items() if v is not None}
-            if d.get("yref") == "y":
-                d["yref"] = yref
-            subfig.add_annotation(**d)
+            subfig.add_shape(**_remap_yref(shape, y_axis_ref))
+        for annotation in fig.layout.annotations:
+            subfig.add_annotation(**_remap_yref(annotation, y_axis_ref))
 
     subfig.update_layout(
-        paper_bgcolor=base.paper_bgcolor or "#0d1117",
-        plot_bgcolor=base.plot_bgcolor or "#161b22",
-        font=base.font.to_plotly_json(),
+        paper_bgcolor=first_layout.paper_bgcolor or DARK.paper_bgcolor,
+        plot_bgcolor=first_layout.plot_bgcolor or DARK.plot_bgcolor,
+        font=first_layout.font.to_plotly_json(),
         margin={"l": _PDF_MARGIN["l"], "r": _PDF_MARGIN["r"], "t": 30, "b": 30},
     )
-    if base.colorway:
-        subfig.update_layout(colorway=list(base.colorway))
+    if first_layout.colorway:
+        subfig.update_layout(colorway=list(first_layout.colorway))
     subfig.update_xaxes(automargin=False)
     subfig.update_yaxes(automargin=False)
 
-    return subfig.to_image(format="pdf", width=A4_W, height=A4_H)
+    return subfig.to_image(format="pdf", width=A4_WIDTH, height=A4_HEIGHT)
 
 
 def save_pdf(

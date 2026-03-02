@@ -13,20 +13,13 @@ wp.line(df, x="date", y="revenue", color="region", theme="watson").show()
 ## Install
 
 ```bash
-# Core (interactive HTML charts)
 pip install watsonplots
-
-# With PDF export
-pip install "watsonplots[pdf]"
-
-# Development
-pip install "watsonplots[dev]"
 ```
 
-With [uv](https://docs.astral.sh/uv/):
+Development:
 
 ```bash
-uv sync --extra pdf
+uv sync --group dev
 ```
 
 ## Chart types
@@ -36,7 +29,7 @@ uv sync --extra pdf
 | `wp.line()` | Line chart with optional multi-series and smooth interpolation |
 | `wp.area()` | Filled area chart, optionally stacked |
 | `wp.scatter()` | Scatter plot with optional color grouping, size encoding, and hover data |
-| `wp.histogram()` | Distribution histogram with optional grouping and overlay/stack modes |
+| `wp.sync()` | Align two time-series DataFrames via cross-correlation on a shared column |
 
 ## Usage
 
@@ -68,13 +61,6 @@ wp.scatter(df, x="age", y="salary", color="dept",
 wp.scatter(df, x="age", y="salary", size="exp_years", color="dept").show()
 ```
 
-### Histogram
-
-```python
-wp.histogram(df, x="score", color="group",
-             bins=25, barmode="overlay", theme="watson").show()
-```
-
 ## Chart object
 
 Every chart function returns a `Chart` object:
@@ -82,16 +68,31 @@ Every chart function returns a `Chart` object:
 ```python
 chart = wp.line(df, x="date", y="revenue")
 
-chart.show()               # display in browser or notebook
-chart.save("chart.html")   # write self-contained HTML file
-chart.to_html()            # HTML string for embedding
-chart.to_fig()             # raw plotly.graph_objects.Figure
-chart.update(title="New")  # update layout, returns self
+chart.show()                           # display in browser or notebook
+chart.save("chart.html")               # write self-contained HTML file
+chart.to_html()                        # HTML string for embedding
+chart.to_fig()                         # raw plotly.graph_objects.Figure
+chart.update(title="New")              # update layout, returns self
+chart.add_threshold(100, label="Cap")  # horizontal reference line, returns self
 ```
 
-## PDF export
+## Sync
 
-Requires `pip install "watsonplots[pdf]"` (`kaleido` + `pypdf`).
+Align two time-series DataFrames that share a common signal but have different clock offsets.
+
+```python
+df1_synced, df2_synced = wp.sync(
+    df1, df2,
+    common_column=("battery_v", "bus_voltage_v"),
+    time1="timestamp",
+    time2="device_timestamp",
+)
+```
+
+Both DataFrames are returned with normalised timestamps. `df2`'s timestamps are shifted
+by the discovered lag; all other columns are untouched.
+
+## PDF export
 
 Pages are fixed **A4 portrait** (595 × 842 pt). When `per_page > 1`, charts are
 composed using Plotly subplots so positioning is always exact.
@@ -150,20 +151,7 @@ my_theme = Theme(
 wp.line(df, x="date", y="revenue", theme=my_theme).show()
 ```
 
-## Plotly escape hatch
-
-Access the underlying `go.Figure` for anything the high-level API doesn't cover:
-
-```python
-fig = wp.line(df, x="date", y="revenue", theme="watson").to_fig()
-
-fig.add_annotation(x="2024-06-01", y=15000, text="Peak", showarrow=True)
-fig.write_html("annotated.html")
-```
-
 ## Requirements
 
 - Python ≥ 3.12
-- `plotly ≥ 5.0`
-- `pandas ≥ 2.0`
-- PDF export: `kaleido ≥ 0.2`, `pypdf ≥ 4.0`
+- `plotly ≥ 5.0`, `pandas ≥ 2.0`, `kaleido ≥ 0.2`, `pypdf ≥ 4.0`, `scipy ≥ 1.0`

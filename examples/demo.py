@@ -13,7 +13,7 @@ jetson = pd.read_csv("examples/data/jetson.csv")
 binlog, jetson = wp.sync(
     binlog,
     jetson,
-    on=("BAT_Volt", "bus_voltage_v"),
+    common_column=("BAT_Volt", "bus_voltage_v"),
     time1="timestamp_local",
     time2="jetson_timestamp_local",
 )
@@ -39,7 +39,6 @@ voltage_chart = wp.line(
     [b, j],
     x="time",
     y="voltage",
-    color=["Drone Battery", "Jetson Power Bus"],
     title="Voltage Comparison",
     xlabel="Time (UTC)",
     ylabel="Voltage (V)",

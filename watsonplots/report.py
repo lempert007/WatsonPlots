@@ -3,8 +3,8 @@ import os
 import plotly.graph_objects as go
 
 from .chart import Chart
-from .layout import apply_theme as _apply_theme
-from .themes import Theme, get_theme
+from .layout import apply_theme
+from .themes import DARK, Theme, get_theme
 
 
 def save_html(
@@ -32,13 +32,9 @@ def save_html(
              are derived from the same theme. Does not modify the Chart objects.
     """
     resolved_theme = get_theme(theme) if theme is not None else None
+    page_theme = resolved_theme or DARK
 
     divs = [_render_chart(chart, i, offline, resolved_theme) for i, chart in enumerate(charts)]
-
-    bg = resolved_theme.paper_bgcolor if resolved_theme else "#0d1117"
-    card_bg = resolved_theme.plot_bgcolor if resolved_theme else "#161b22"
-    font_color = resolved_theme.font_color if resolved_theme else "#e6edf3"
-    font_family = resolved_theme.font_family if resolved_theme else "Inter, system-ui, sans-serif"
 
     page = f"""<!DOCTYPE html>
 <html lang="en">
@@ -49,12 +45,12 @@ def save_html(
   <style>
     *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{
-      background: {bg};
-      font-family: {font_family};
+      background: {page_theme.paper_bgcolor};
+      font-family: {page_theme.font_family};
       padding: 40px 24px;
     }}
     h1 {{
-      color: {font_color};
+      color: {page_theme.font_color};
       font-size: 1.25rem;
       font-weight: 600;
       margin-bottom: 32px;
@@ -66,7 +62,7 @@ def save_html(
       margin: 0 auto 32px;
       border-radius: 8px;
       overflow: hidden;
-      background: {card_bg};
+      background: {page_theme.plot_bgcolor};
       box-shadow: 0 1px 3px rgba(0,0,0,.4);
     }}
     .chart > div {{ width: 100% !important; }}
@@ -95,5 +91,5 @@ def _render_chart(chart: Chart, index: int, offline: bool, theme: Theme | None) 
 
     # Copy the figure so the original Chart object is never mutated
     fig = go.Figure(chart.to_fig().to_dict())
-    _apply_theme(fig, theme)
+    apply_theme(fig, theme)
     return fig.to_html(full_html=False, include_plotlyjs=include_plotlyjs)

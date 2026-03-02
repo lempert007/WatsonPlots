@@ -3,8 +3,19 @@ import plotly.graph_objects as go
 from .themes import Theme
 
 
+def _axis_theme_props(theme: Theme) -> dict:
+    return {
+        "gridcolor": theme.gridcolor,
+        "gridwidth": theme.gridwidth,
+        "showgrid": theme.show_grid,
+        "zerolinecolor": theme.zerolinecolor,
+        "linecolor": theme.linecolor,
+    }
+
+
 def apply_theme(fig: go.Figure, theme: Theme, title: str = "") -> go.Figure:
     """Apply all theme properties to a Plotly Figure layout. Mutates fig in-place."""
+    axis = _axis_theme_props(theme)
     fig.update_layout(
         title=title,
         paper_bgcolor=theme.paper_bgcolor,
@@ -22,19 +33,7 @@ def apply_theme(fig: go.Figure, theme: Theme, title: str = "") -> go.Figure:
             borderwidth=theme.legend_borderwidth,
             font=dict(color=theme.font_color),
         ),
-        xaxis=dict(
-            gridcolor=theme.gridcolor,
-            gridwidth=theme.gridwidth,
-            showgrid=theme.show_grid,
-            zerolinecolor=theme.zerolinecolor,
-            linecolor=theme.linecolor,
-        ),
-        yaxis=dict(
-            gridcolor=theme.gridcolor,
-            gridwidth=theme.gridwidth,
-            showgrid=theme.show_grid,
-            zerolinecolor=theme.zerolinecolor,
-            linecolor=theme.linecolor,
-        ),
+        xaxis=axis,
+        yaxis=axis,
     )
     return fig

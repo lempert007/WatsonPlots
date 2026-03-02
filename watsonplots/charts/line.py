@@ -1,11 +1,15 @@
-import itertools
-
 import pandas as pd
 import plotly.graph_objects as go
 
 from ..chart import Chart
 from ..consts import DEFAULT_THEME, DataFormats
-from ..defaults import infer_axis_type, resolve_groups, smart_title, tick_format_for
+from ..defaults import (
+    infer_axis_type,
+    make_elapsed_xval,
+    resolve_groups,
+    smart_title,
+    tick_format_for,
+)
 from ..layout import apply_theme
 from ..themes import Theme, get_theme
 
@@ -15,7 +19,6 @@ def line(
     *,
     x: str,
     y: str | list[str],
-    color: str | list[str] | None = None,
     segment_color: str | None = None,
     title: str | None = None,
     xlabel: str | None = None,
@@ -34,8 +37,6 @@ def line(
                    or a list of DataFrames (one trace per DataFrame).
     x:             Column name for the x-axis.
     y:             Column name(s) for the y-axis. A list produces multiple traces.
-    color:         Column name to split a single DataFrame into traces, or a list
-                   of label strings when data is a list of DataFrames.
     segment_color: Column name whose value defines background segments. Each contiguous
                    run of the same value gets a distinct semi-transparent background band.
     title:         Chart title. Auto-generated if omitted.
@@ -49,26 +50,22 @@ def line(
     resolved_theme = get_theme(theme)
     y_cols = [y] if isinstance(y, str) else list(y)
     line_shape = "spline" if smooth else "linear"
-    groups, ref_df = resolve_groups(data, color)
+    groups, ref_df = resolve_groups(data)
 
-    # Convert datetime x-axis to elapsed seconds so charts show "0, 30, 60 …" instead of UTC
-    is_time = pd.api.types.is_datetime64_any_dtype(ref_df[x])
-    t0 = ref_df[x].min() if is_time else None
-
-    def xval(df: pd.DataFrame) -> pd.Series:
-        return (df[x] - t0).dt.total_seconds() if is_time else df[x]
+    is_time, xval = make_elapsed_xval(x, ref_df[x])
 
     fig = go.Figure()
-    for (sub_df, group_label), y_col in itertools.product(groups, y_cols):
-        fig.add_trace(
-            go.Scatter(
-                x=xval(sub_df),
-                y=sub_df[y_col],
-                mode=mode,
-                name=group_label or y_col,
-                line={"shape": line_shape},
+    for group_df, group_label in groups:
+        for y_col in y_cols:
+            fig.add_trace(
+                go.Scatter(
+                    x=xval(group_df),
+                    y=group_df[y_col],
+                    mode=mode,
+                    name=group_label or y_col,
+                    line={"shape": line_shape},
+                )
             )
-        )
 
     if segment_color:
         _add_segment_backgrounds(
@@ -97,7 +94,7 @@ def line(
 
 def _add_segment_backgrounds(
     fig: go.Figure,
-    df,
+    df: pd.DataFrame,
     x: str,
     segment_col: str,
     colorway: list[str],
@@ -108,31 +105,33 @@ def _add_segment_backgrounds(
     Bands are drawn below the data (layer='below') at low opacity so the lines
     remain clearly visible.
     """
-    unique_vals = list(dict.fromkeys(df[segment_col]))  # first-seen order
-    color_map = {v: colorway[i % len(colorway)] for i, v in enumerate(unique_vals)}
+    unique_values = list(dict.fromkeys(df[segment_col]))  # first-seen order
+    color_for = {
+        value: colorway[index % len(colorway)] for index, value in enumerate(unique_values)
+    }
 
-    prev_val = df[segment_col].iloc[0]
-    seg_start = df[x].iloc[0]
+    previous_value = df[segment_col].iloc[0]
+    segment_start = df[x].iloc[0]
 
-    for i in range(1, len(df)):
-        curr_val = df[segment_col].iloc[i]
-        if curr_val != prev_val:
+    for row_idx in range(1, len(df)):
+        current_value = df[segment_col].iloc[row_idx]
+        if current_value != previous_value:
             fig.add_vrect(
-                x0=seg_start,
-                x1=df[x].iloc[i],
-                fillcolor=color_map[prev_val],
+                x0=segment_start,
+                x1=df[x].iloc[row_idx],
+                fillcolor=color_for[previous_value],
                 opacity=0.15,
                 layer="below",
                 line_width=0,
             )
-            seg_start = df[x].iloc[i]
-            prev_val = curr_val
+            segment_start = df[x].iloc[row_idx]
+            previous_value = current_value
 
     # Close the final segment
     fig.add_vrect(
-        x0=seg_start,
+        x0=segment_start,
         x1=df[x].iloc[-1],
-        fillcolor=color_map[prev_val],
+        fillcolor=color_for[previous_value],
         opacity=0.15,
         layer="below",
         line_width=0,
