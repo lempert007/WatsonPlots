@@ -58,10 +58,10 @@ def sync(
         (common_columns, common_columns) if isinstance(common_columns, str) else common_columns
     )
 
-    _require_column(df1, time1, role="time", df_name="df1")
-    _require_column(df2, time2, role="time", df_name="df2")
-    _require_column(df1, col1, role="sync", df_name="df1")
-    _require_column(df2, col2, role="sync", df_name="df2")
+    _require_column(df1, time1)
+    _require_column(df2, time2)
+    _require_column(df1, col1)
+    _require_column(df2, col2)
 
     for column, df, label in [(col1, df1, "df1"), (col2, df2, "df2")]:
         if df[column].std() == 0:
@@ -85,11 +85,9 @@ def sync(
     return out1, out2
 
 
-def _require_column(df: pd.DataFrame, col: str, role: str, df_name: str) -> None:
+def _require_column(df: pd.DataFrame, col: str) -> None:
     if col not in df.columns:
-        raise ColumnNotFoundError(
-            f"{role} column '{col}' not found in {df_name}. Available: {list(df.columns)}"
-        )
+        raise ColumnNotFoundError(f"column '{col}' not found. Available: {list(df.columns)}")
 
 
 def _parse_time(df: pd.DataFrame, col: str, time_format: str) -> pd.Series:
