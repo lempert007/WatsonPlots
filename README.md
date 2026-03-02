@@ -83,7 +83,6 @@ composed using Plotly subplots so positioning is always exact.
 ```python
 charts = [
     wp.line(df, x="date", y="revenue", theme="watson"),
-    wp.histogram(df, x="score", color="group"),
     wp.scatter(df, x="age", y="salary", color="dept"),
     wp.area(df, x="date", y=["revenue", "cost"], stacked=True),
 ]

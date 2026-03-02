@@ -13,7 +13,6 @@ Chart functions (all return a Chart object)
 -------------------------------------------
     wp.line(data, *, x, y, title, xlabel, ylabel, theme, mode, smooth, show_legend)
     wp.area(data, *, x, y, title, xlabel, ylabel, theme, stacked, show_legend)
-    wp.histogram(data, *, x, bins, title, xlabel, ylabel, theme, barmode, opacity, show_legend)
 
 Chart object methods
 --------------------
@@ -33,7 +32,7 @@ Themes
 
 from . import themes
 from .chart import Chart
-from .charts import area, histogram, line, scatter
+from .charts import area, line, scatter
 from .pdf import save_pdf
 from .report import save_html
 from .sync import sync
@@ -43,7 +42,6 @@ __all__ = [
     "line",
     "area",
     "scatter",
-    "histogram",
     "Chart",
     "Theme",
     "themes",
