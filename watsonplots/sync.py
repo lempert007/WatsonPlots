@@ -10,7 +10,7 @@ _RESAMPLE_FREQ = "100ms"
 
 # Ratio of peak correlation to signal length below which we warn the user.
 # Empirically, well-correlated signals score > 0.3; unrelated signals score < 0.05.
-_MIN_CORRELATION_RATIO = 0.1
+_MIN_CORRELATION_SCORE = 0.1
 
 
 def sync(
@@ -44,15 +44,6 @@ def sync(
     -------
     (df1, df2) — both with normalized timestamp columns, df2 shifted by the
     discovered lag. All other columns are untouched.
-
-    Example
-    -------
-    binlog_sync, jetson_sync = wp.sync(
-        binlog, jetson,
-        common_column=("BAT_Volt", "bus_voltage_v"),
-        time1="timestamp_local",
-        time2="jetson_timestamp_local",
-    )
     """
     col1, col2 = (
         (common_columns, common_columns) if isinstance(common_columns, str) else common_columns
@@ -74,13 +65,13 @@ def sync(
     indexed_signal_2 = pd.Series(df2[col2].to_numpy(), index=timestamps_2)
     lag = _compute_lag(indexed_signal_1, indexed_signal_2, col1, col2)
 
-    out1 = df1.copy()
-    out1[time1] = timestamps_1
+    df1_synced = df1.copy()
+    df1_synced[time1] = timestamps_1
 
-    out2 = df2.copy()
-    out2[time2] = timestamps_2 - lag
+    df2_synced = df2.copy()
+    df2_synced[time2] = timestamps_2 - lag
 
-    return out1, out2
+    return df1_synced, df2_synced
 
 
 def _require_column(df: pd.DataFrame, col: str) -> None:
@@ -98,9 +89,17 @@ def _parse_time(df: pd.DataFrame, col: str, time_format: str) -> pd.Series:
         ) from exc
 
 
+def _resample(signal: pd.Series) -> pd.Series:
+    return signal.resample(_RESAMPLE_FREQ).mean().interpolate()
+
+
+def _normalize(signal: pd.Series) -> pd.Series:
+    return ((signal - signal.mean()) / signal.std()).fillna(0)
+
+
 def _compute_lag(
-    indexed_signal_1: pd.Series,
-    indexed_signal_2: pd.Series,
+    signal_1: pd.Series,
+    signal_2: pd.Series,
     col1: str,
     col2: str,
 ) -> pd.Timedelta:
@@ -109,25 +108,23 @@ def _compute_lag(
     except ImportError as exc:
         raise ImportError("sync requires scipy: pip install scipy") from exc
 
-    # Resample both signals onto a uniform time grid so scipy's correlate
-    # (which treats inputs as plain arrays) operates in consistent time units.
-    resampled_1 = indexed_signal_1.resample(_RESAMPLE_FREQ).mean().interpolate()
-    resampled_2 = indexed_signal_2.resample(_RESAMPLE_FREQ).mean().interpolate()
+    resampled_1 = _resample(signal_1)
+    resampled_2 = _resample(signal_2)
 
-    def normalize(signal: pd.Series) -> pd.Series:
-        return ((signal - signal.mean()) / signal.std()).fillna(0)
+    cross_correlation = correlate(
+        _normalize(resampled_1),
+        _normalize(resampled_2),
+    )
 
-    correlation = correlate(normalize(resampled_1), normalize(resampled_2), mode="full")
-
-    if correlation.max() / min(len(resampled_1), len(resampled_2)) < _MIN_CORRELATION_RATIO:
+    correlation_quality_score = cross_correlation.max() / min(len(resampled_1), len(resampled_2))
+    if correlation_quality_score < _MIN_CORRELATION_SCORE:
         warnings.warn(
             f"sync signals '{col1}' and '{col2}' show low correlation — "
             "result may be unreliable. Try a different 'common_column'.",
-            stacklevel=3,
+            stacklevel=4,
         )
 
-    # scipy's full cross-correlation output has length N1 + N2 - 1.
-    # The zero-lag position sits at index (N2 - 1), so the actual lag in
-    # samples is the distance of the peak from that centre.
-    lag_samples = int(correlation.argmax()) - (len(resampled_2) - 1)
-    return pd.Timedelta(_RESAMPLE_FREQ) * lag_samples
+    zero_lag_index = len(resampled_2) - 1
+    peak_index = int(cross_correlation.argmax())
+    lag_in_samples = peak_index - zero_lag_index
+    return pd.Timedelta(_RESAMPLE_FREQ) * lag_in_samples

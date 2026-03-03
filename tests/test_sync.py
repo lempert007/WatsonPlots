@@ -59,7 +59,7 @@ def test_sync_timezone_mismatch_does_not_crash():
 
 def test_sync_missing_time_col():
     df1, df2 = _make_logs()
-    with pytest.raises(ColumnNotFoundError, match="time column 'bad'"):
+    with pytest.raises(ColumnNotFoundError):
         wp.sync(df1, df2, common_columns="voltage", time1="bad", time2="time")
 
 

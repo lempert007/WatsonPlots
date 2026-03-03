@@ -1,12 +1,13 @@
-import itertools
-
 import plotly.graph_objects as go
 
 from ..chart import Chart
 from ..consts import DEFAULT_THEME, DataFormats
-from ..layout import apply_theme
 from ..themes import Theme, get_theme
-from ..utils import assign_colors, infer_axis_type, make_elapsed_xval, resolve_groups, smart_title
+from ..utils import assign_colors, finalize_axes, make_elapsed_xval, to_traces
+
+_FILL_ZERO = "tozeroy"
+_FILL_STACK = "tonexty"
+_AREA_LINE_WIDTH = 1
 
 
 def area(
@@ -35,35 +36,49 @@ def area(
     """
     resolved_theme = get_theme(theme)
     y_cols = [y] if isinstance(y, str) else list(y)
-    groups, ref_df = resolve_groups(data, labels)
+    traces = to_traces(data, labels)
+    ref_df = traces[0][0]
     is_time, xval = make_elapsed_xval(x, ref_df[x])
 
     fig = go.Figure()
-    for group_df, group_label in groups:
-        elapsed_df = group_df.assign(**{x: xval(group_df)}).reset_index(drop=True)
+    for group_df, group_label in traces:
+        x_vals = xval(group_df)
         for y_col in y_cols:
             if segment_color:
                 _add_segmented_traces(
-                    fig, elapsed_df, x, y_col, segment_color, resolved_theme.colorway
+                    fig,
+                    group_df.assign(**{x: x_vals}),
+                    x,
+                    y_col,
+                    segment_color,
+                    resolved_theme.colorway,
                 )
             else:
-                fill = "tonexty" if (stacked and len(fig.data) > 0) else "tozeroy"
+                fill = _FILL_STACK if (stacked and len(fig.data) > 0) else _FILL_ZERO
                 fig.add_trace(
                     go.Scatter(
-                        x=elapsed_df[x],
-                        y=elapsed_df[y_col],
+                        x=x_vals,
+                        y=group_df[y_col],
                         mode="lines",
                         name=group_label or y_col,
                         fill=fill,
-                        line={"width": 1},
+                        line={"width": _AREA_LINE_WIDTH},
                     )
                 )
 
-    x_label = xlabel or ("Time (s)" if is_time else x)
-    apply_theme(fig, resolved_theme, title=title or smart_title(x_label, y_cols[0]))
-    fig.update_xaxes(type=infer_axis_type(xval(ref_df)), title_text=x_label)
-    fig.update_yaxes(title_text=ylabel or (y if isinstance(y, str) else ""))
-    fig.update_layout(showlegend=show_legend if len(fig.data) > 1 else False)
+    finalize_axes(
+        fig,
+        resolved_theme,
+        ref_x=xval(ref_df),
+        ref_y=ref_df[y_cols[0]],
+        x_col=x,
+        y_col=y_cols[0],
+        title=title,
+        xlabel=xlabel,
+        ylabel=ylabel,
+        is_time=is_time,
+        show_legend=show_legend,
+    )
     return Chart(fig, resolved_theme)
 
 
@@ -71,11 +86,11 @@ def _iter_segments(df, col: str):
     """Yield (segment_df, value) for each contiguous run of equal values in col.
     Each segment includes one extra overlapping row to avoid visual gaps.
     """
-    for value, row_iter in itertools.groupby(
-        range(len(df)), key=lambda row_idx: df[col].iloc[row_idx]
-    ):
-        row_indices = list(row_iter)
-        yield df.iloc[row_indices[0] : min(row_indices[-1] + 2, len(df))], value
+    df = df.reset_index(drop=True)
+    runs = df[col].ne(df[col].shift()).cumsum()
+    for _, group in df.groupby(runs, sort=False):
+        end = min(group.index[-1] + 2, len(df))
+        yield df.iloc[group.index[0] : end], group[col].iloc[0]
 
 
 def _add_segmented_traces(
@@ -98,8 +113,8 @@ def _add_segmented_traces(
                 y=segment_df[y_col],
                 mode="lines",
                 name=str(value),
-                fill="tozeroy",
-                line={"width": 1, "color": color},
+                fill=_FILL_ZERO,
+                line={"width": _AREA_LINE_WIDTH, "color": color},
                 fillcolor=color,
                 showlegend=(value not in shown_in_legend),
                 legendgroup=str(value),

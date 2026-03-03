@@ -1,29 +1,20 @@
-from dataclasses import dataclass
+from collections.abc import Callable
 
 import pandas as pd
 import plotly.graph_objects as go
 
 from ..chart import Chart
 from ..consts import DEFAULT_THEME, DataFormats
-from ..layout import apply_theme
 from ..themes import Theme, get_theme
 from ..utils import (
     assign_colors,
-    infer_axis_type,
+    finalize_axes,
     make_elapsed_xval,
-    make_shared_elapsed_xval,
-    resolve_groups,
-    smart_title,
-    tick_format_for,
+    to_traces,
 )
 
-
-@dataclass
-class AxisRefs:
-    is_time: bool
-    ref_x: pd.Series
-    ref_y: pd.Series
-    ref_y_name: str
+# Type alias for the x-value extractor returned by make_elapsed_xval
+XVal = Callable[[pd.DataFrame], pd.Series]
 
 
 def line(
@@ -58,64 +49,70 @@ def line(
     resolved_theme = get_theme(theme)
     fig = go.Figure()
     line_shape = "spline" if smooth else "linear"
+    y_cols = [y] if isinstance(y, str) else list(y)
 
     if isinstance(data, list) and isinstance(data[0], pd.DataFrame):
-        axes = _add_multi_df_traces(fig, data, x, y, labels, mode, line_shape)
+        is_time, xval = make_elapsed_xval(x, *[df[x] for df in data])
+        ref_df = data[0]
+        _add_multi_df_traces(fig, data, y, labels, mode, line_shape, xval)
     else:
-        axes = _add_single_df_traces(
-            fig, data, x, y, mode, line_shape, segment_color, resolved_theme.colorway
-        )
+        traces = to_traces(data)
+        ref_df = traces[0][0]
+        is_time, xval = make_elapsed_xval(x, ref_df[x])
+        _add_single_df_traces(fig, traces, y_cols, mode, line_shape, xval)
+        if segment_color:
+            elapsed_ref_df = ref_df.assign(**{x: xval(ref_df)})
+            _add_segment_backgrounds(fig, elapsed_ref_df, x, segment_color, resolved_theme.colorway)
 
-    x_label = xlabel or ("Time (s)" if axes.is_time else x)
-    apply_theme(fig, resolved_theme, title=title or smart_title(x_label, axes.ref_y_name))
-    fig.update_xaxes(
-        type=infer_axis_type(axes.ref_x), title_text=x_label, tickformat=tick_format_for(axes.ref_x)
+    y_label = ylabel or (y if isinstance(y, str) else "")
+    finalize_axes(
+        fig,
+        resolved_theme,
+        ref_x=xval(ref_df),
+        ref_y=ref_df[y_cols[0]],
+        x_col=x,
+        y_col=y_cols[0],
+        title=title,
+        xlabel=xlabel,
+        ylabel=y_label,
+        is_time=is_time,
+        show_legend=show_legend,
     )
-    fig.update_yaxes(
-        type=infer_axis_type(axes.ref_y),
-        title_text=ylabel or (y if isinstance(y, str) else ""),
-        tickformat=tick_format_for(axes.ref_y),
-    )
-    fig.update_layout(showlegend=show_legend if len(fig.data) > 1 else False)
     return Chart(fig, resolved_theme)
 
 
 def _add_multi_df_traces(
     fig: go.Figure,
     data: list[pd.DataFrame],
-    x: str,
     y: str | list[str],
     labels: list[str] | None,
     mode: str,
     line_shape: str,
-) -> AxisRefs:
+    xval: XVal,
+) -> None:
     y_cols = [y] * len(data) if isinstance(y, str) else list(y)
     trace_labels = labels if labels is not None else [str(i) for i in range(len(data))]
-    is_time, xval = make_shared_elapsed_xval([(df, x) for df in data])
     for df, label, y_col in zip(data, trace_labels, y_cols):
         fig.add_trace(
             go.Scatter(
-                x=xval(df, x), y=df[y_col], mode=mode, name=label, line={"shape": line_shape}
+                x=xval(df),
+                y=df[y_col],
+                mode=mode,
+                name=label,
+                line={"shape": line_shape},
             )
         )
-    ref_df = data[0]
-    return AxisRefs(is_time, xval(ref_df, x), ref_df[y_cols[0]], y_cols[0])
 
 
 def _add_single_df_traces(
     fig: go.Figure,
-    data: DataFormats,
-    x: str,
-    y: str | list[str],
+    traces: list[tuple[pd.DataFrame, str]],
+    y_cols: list[str],
     mode: str,
     line_shape: str,
-    segment_color: str | None,
-    colorway: list[str],
-) -> AxisRefs:
-    y_cols = [y] if isinstance(y, str) else list(y)
-    groups, ref_df = resolve_groups(data)
-    is_time, xval = make_elapsed_xval(x, ref_df[x])
-    for group_df, group_label in groups:
+    xval: XVal,
+) -> None:
+    for group_df, group_label in traces:
         for y_col in y_cols:
             fig.add_trace(
                 go.Scatter(
@@ -126,11 +123,6 @@ def _add_single_df_traces(
                     line={"shape": line_shape},
                 )
             )
-    if segment_color:
-        _add_segment_backgrounds(
-            fig, ref_df.assign(**{x: xval(ref_df)}), x, segment_color, colorway
-        )
-    return AxisRefs(is_time, xval(ref_df), ref_df[y_cols[0]], y_cols[0])
 
 
 def _add_segment_backgrounds(
@@ -156,28 +148,17 @@ def _add_segment_backgrounds(
             )
         )
 
-    previous_value = df[segment_col].iloc[0]
-    segment_start = df[x].iloc[0]
+    mask = df[segment_col].ne(df[segment_col].shift())
+    seg_starts = df.loc[mask, x].tolist()
+    seg_values = df.loc[mask, segment_col].tolist()
+    seg_ends = seg_starts[1:] + [df[x].iloc[-1]]
 
-    for row_idx in range(1, len(df)):
-        current_value = df[segment_col].iloc[row_idx]
-        if current_value != previous_value:
-            fig.add_vrect(
-                x0=segment_start,
-                x1=df[x].iloc[row_idx],
-                fillcolor=color_for[previous_value],
-                opacity=0.15,
-                layer="below",
-                line_width=0,
-            )
-            segment_start = df[x].iloc[row_idx]
-            previous_value = current_value
-
-    fig.add_vrect(
-        x0=segment_start,
-        x1=df[x].iloc[-1],
-        fillcolor=color_for[previous_value],
-        opacity=0.15,
-        layer="below",
-        line_width=0,
-    )
+    for value, x0, x1 in zip(seg_values, seg_starts, seg_ends):
+        fig.add_vrect(
+            x0=x0,
+            x1=x1,
+            fillcolor=color_for[value],
+            opacity=0.15,
+            layer="below",
+            line_width=0,
+        )

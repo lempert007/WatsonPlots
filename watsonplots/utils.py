@@ -2,10 +2,13 @@ from collections.abc import Callable
 from enum import Enum
 
 import pandas as pd
+import plotly.graph_objects as go
 
-from .consts import DataFormats
+from .consts import TIME_LABEL, DataFormats
+from .themes import Theme
 
 _LARGE_NUMBER_THRESHOLD = 10_000
+NO_LABEL = ""
 
 
 class AxisType(str, Enum):
@@ -42,7 +45,6 @@ def infer_axis_type(series: pd.Series) -> AxisType:
 
 
 def smart_title(x: str | None, y: str | None) -> str:
-    """Generate a default chart title from column names."""
     if x and y:
         return f"{y} vs {x}"
     return ""
@@ -57,34 +59,31 @@ def tick_format_for(series: pd.Series) -> TickFormat | None:
 
 
 def make_elapsed_xval(
-    x: str, series: pd.Series
+    x: str, *series: pd.Series
 ) -> tuple[bool, Callable[[pd.DataFrame], pd.Series]]:
     """Build an x-value extractor that converts datetime columns to elapsed seconds.
+
+    Pass one series for a single DataFrame, or multiple to share a global t0
+    (so all traces use the same elapsed-time origin).
 
     Returns (is_time, xval) where xval(df) → pd.Series.
     Non-datetime columns are returned as-is.
     """
-    if not pd.api.types.is_datetime64_any_dtype(series):
-        return False, lambda df: df[x]
-    t0 = series.min()
-    return True, lambda df: (df[x] - t0).dt.total_seconds()
+    is_datetime = pd.api.types.is_datetime64_any_dtype(series[0])
 
+    if not is_datetime:
 
-def make_shared_elapsed_xval(
-    df_col_pairs: list[tuple[pd.DataFrame, str]],
-) -> tuple[bool, Callable[[pd.DataFrame, str], pd.Series]]:
-    """Build a shared x-value extractor for multiple DataFrames with different x columns.
+        def get_column(df: pd.DataFrame) -> pd.Series:
+            return df[x]
 
-    When the x columns are datetime, all DataFrames share a common t0 (global minimum)
-    so elapsed-seconds values are consistent across traces.
+        return False, get_column
 
-    Returns (is_time, xval) where xval(df, col) → pd.Series.
-    """
-    first_series = df_col_pairs[0][0][df_col_pairs[0][1]]
-    if not pd.api.types.is_datetime64_any_dtype(first_series):
-        return False, lambda df, col: df[col]
-    t0 = min(df[col].min() for df, col in df_col_pairs)
-    return True, lambda df, col: (df[col] - t0).dt.total_seconds()
+    t0 = min(s.min() for s in series)
+
+    def to_elapsed_seconds(df: pd.DataFrame) -> pd.Series:
+        return (df[x] - t0).dt.total_seconds()
+
+    return True, to_elapsed_seconds
 
 
 def assign_colors(unique_values: list, colorway: list[str]) -> dict:
@@ -92,19 +91,46 @@ def assign_colors(unique_values: list, colorway: list[str]) -> dict:
     return {value: colorway[index % len(colorway)] for index, value in enumerate(unique_values)}
 
 
-def resolve_groups(
+def finalize_axes(
+    fig: go.Figure,
+    theme: Theme,
+    *,
+    ref_x: pd.Series,
+    ref_y: pd.Series,
+    x_col: str,
+    y_col: str,
+    title: str | None,
+    xlabel: str | None,
+    ylabel: str | None,
+    is_time: bool,
+    show_legend: bool,
+) -> None:
+    """Apply theme, axis labels, tick formats, and legend visibility to a figure."""
+    from .layout import apply_theme  # local import avoids circular dependency
+
+    x_label = xlabel or (TIME_LABEL if is_time else x_col)
+    apply_theme(fig, theme, title=title or smart_title(x_label, y_col))
+
+    x_type = infer_axis_type(ref_x)
+    x_tick_fmt = tick_format_for(ref_x)
+    fig.update_xaxes(type=x_type, title_text=x_label, tickformat=x_tick_fmt)
+
+    y_type = infer_axis_type(ref_y)
+    y_tick_fmt = tick_format_for(ref_y)
+    fig.update_yaxes(type=y_type, title_text=ylabel or y_col, tickformat=y_tick_fmt)
+
+    fig.update_layout(showlegend=show_legend if len(fig.data) > 1 else False)
+
+
+def to_traces(
     data: DataFormats,
     labels: list[str] | None = None,
-) -> tuple[list[tuple[pd.DataFrame, str | None]], pd.DataFrame]:
-    """
-    Resolve any supported data input into ([(group_df, label), ...], ref_df).
+) -> list[tuple[pd.DataFrame, str]]:
+    is_multi_df = isinstance(data, list) and isinstance(data[0], pd.DataFrame)
 
-    label is None for a single DataFrame — callers fall back to the column name.
-    A list of DataFrames produces one trace per DataFrame, labeled by index unless
-    labels are provided.
-    """
-    if isinstance(data, list) and data and isinstance(data[0], pd.DataFrame):
-        trace_labels = labels if labels is not None else [str(i) for i in range(len(data))]
-        return list(zip(data, trace_labels)), data[0]
-    df = pd.DataFrame(data)
-    return [(df, None)], df
+    if is_multi_df:
+        auto_labels = [str(i) for i in range(len(data))]
+        trace_labels = labels if labels is not None else auto_labels
+        return list(zip(data, trace_labels))
+
+    return [(pd.DataFrame(data), NO_LABEL)]

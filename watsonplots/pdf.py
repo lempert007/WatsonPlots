@@ -20,13 +20,6 @@ def _axis_props(axis) -> dict:
 
 
 def _remap_axis_refs(plotly_obj, subplot_row: int) -> dict:
-    """Serialize a Plotly shape or annotation and remap axis refs to the correct subplot row.
-
-    add_vrect → xref="x", yref="paper"  (xref must target the correct x-axis;
-                                          yref="paper" must become "y{n} domain"
-                                          so the band only spans its own subplot)
-    add_hline → xref="paper", yref="y"  (yref must target the correct y-axis)
-    """
     props = {key: value for key, value in plotly_obj.to_plotly_json().items() if value is not None}
     suffix = "" if subplot_row == 1 else str(subplot_row)
     if props.get("xref") == "x":
@@ -39,53 +32,58 @@ def _remap_axis_refs(plotly_obj, subplot_row: int) -> dict:
 
 
 def _render_batch(charts: list[Chart], override_theme: Theme | None = None) -> bytes:
-    """Render one or more charts as a single full-A4 PDF page."""
     figs = [c.to_fig() for c in charts]
-
     if override_theme is not None:
         for fig in figs:
             apply_theme(fig, override_theme, title=fig.layout.title.text or "")
+    if len(figs) == 1:
+        return _render_single_to_pdf(figs[0])
+    return _render_multi_to_pdf(figs)
 
-    if len(charts) == 1:
-        figs[0].update_layout(margin=_PDF_MARGIN)
-        figs[0].update_xaxes(automargin=False)
-        figs[0].update_yaxes(automargin=False)
-        return figs[0].to_image(format="pdf", width=A4_WIDTH, height=A4_HEIGHT)
 
-    chart_count = len(charts)
-    first_layout = figs[0].layout
+def _render_single_to_pdf(fig) -> bytes:
+    fig.update_layout(margin=_PDF_MARGIN)
+    fig.update_xaxes(automargin=False)
+    fig.update_yaxes(automargin=False)
+    return fig.to_image(format="pdf", width=A4_WIDTH, height=A4_HEIGHT)
+
+
+def _render_multi_to_pdf(figs) -> bytes:
+    subfig = _compose_subplots(figs)
+    _apply_subplot_theme(subfig, source_layout=figs[0].layout)
+    subfig.update_xaxes(automargin=False)
+    subfig.update_yaxes(automargin=False)
+    return subfig.to_image(format="pdf", width=A4_WIDTH, height=A4_HEIGHT)
+
+
+def _compose_subplots(figs):
     titles = [fig.layout.title.text or "" for fig in figs]
-    subfig = make_subplots(rows=chart_count, cols=1, vertical_spacing=0.10, subplot_titles=titles)
-
+    subfig = make_subplots(rows=len(figs), cols=1, vertical_spacing=0.10, subplot_titles=titles)
     for subplot_row, fig in enumerate(figs, 1):
         for trace in fig.data:
             subfig.add_trace(trace, row=subplot_row, col=1)
         subfig.update_xaxes(row=subplot_row, col=1, **_axis_props(fig.layout.xaxis))
         subfig.update_yaxes(row=subplot_row, col=1, **_axis_props(fig.layout.yaxis))
-
         for shape in fig.layout.shapes:
             subfig.add_shape(**_remap_axis_refs(shape, subplot_row))
         for annotation in fig.layout.annotations:
             subfig.add_annotation(**_remap_axis_refs(annotation, subplot_row))
+    return subfig
 
-    # Style subplot title annotations with the theme font
-    font_color = first_layout.font.color or DARK.font_color
-    font_family = first_layout.font.family or DARK.font_family
+
+def _apply_subplot_theme(subfig, source_layout) -> None:
+    font_color = source_layout.font.color or DARK.font_color
+    font_family = source_layout.font.family or DARK.font_family
     for annotation in subfig.layout.annotations:
         annotation.update(font=dict(color=font_color, family=font_family))
-
     subfig.update_layout(
-        paper_bgcolor=first_layout.paper_bgcolor or DARK.paper_bgcolor,
-        plot_bgcolor=first_layout.plot_bgcolor or DARK.plot_bgcolor,
-        font=first_layout.font.to_plotly_json(),
+        paper_bgcolor=source_layout.paper_bgcolor or DARK.paper_bgcolor,
+        plot_bgcolor=source_layout.plot_bgcolor or DARK.plot_bgcolor,
+        font=source_layout.font.to_plotly_json(),
         margin={"l": _PDF_MARGIN["l"], "r": _PDF_MARGIN["r"], "t": 30, "b": 30},
     )
-    if first_layout.colorway:
-        subfig.update_layout(colorway=list(first_layout.colorway))
-    subfig.update_xaxes(automargin=False)
-    subfig.update_yaxes(automargin=False)
-
-    return subfig.to_image(format="pdf", width=A4_WIDTH, height=A4_HEIGHT)
+    if source_layout.colorway:
+        subfig.update_layout(colorway=list(source_layout.colorway))
 
 
 def save_pdf(

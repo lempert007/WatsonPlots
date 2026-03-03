@@ -3,15 +3,8 @@ import plotly.graph_objects as go
 
 from ..chart import Chart
 from ..consts import DEFAULT_THEME, DataFormats
-from ..layout import apply_theme
 from ..themes import Theme, get_theme
-from ..utils import (
-    infer_axis_type,
-    make_elapsed_xval,
-    resolve_groups,
-    smart_title,
-    tick_format_for,
-)
+from ..utils import finalize_axes, make_elapsed_xval, to_traces
 
 _BUBBLE_SIZE_MIN_PX = 8
 _BUBBLE_SIZE_MAX_PX = 60
@@ -48,82 +41,89 @@ def scatter(
                       coloured by its row index along the gradient instead of grouping by color=.
     """
     resolved_theme = get_theme(theme)
-    groups, ref_df = resolve_groups(data, labels)
+    trace_inputs = to_traces(data, labels)
+    ref_df = trace_inputs[0][0]
     is_time, xval = make_elapsed_xval(x, ref_df[x])
-
-    all_hover_cols = [size] if size else []
-    hover_template = _build_hover_template(x, y, all_hover_cols) if all_hover_cols else None
+    hover_template = _build_hover_template(x, y, size) if size else None
 
     fig = go.Figure()
 
     if gradient_colors is not None:
-        merged_df = pd.concat([group_df for group_df, _ in groups], ignore_index=True)
-        start_color, end_color = gradient_colors
-        total_points = len(merged_df)
-        marker: dict = {
-            "opacity": opacity,
-            "color": list(range(total_points)),
-            "colorscale": [[0, start_color], [1, end_color]],
-            "showscale": True,
-            "colorbar": {
-                "tickvals": [0, total_points - 1],
-                "ticktext": ["First", "Last"],
-                "thickness": 12,
-                "len": 0.5,
-            },
-        }
-        if size is not None:
-            marker["size"] = _scale_bubble_sizes(merged_df[size].astype(float))
-            marker["sizemode"] = "diameter"
+        merged_df = pd.concat([gdf for gdf, _ in trace_inputs], ignore_index=True)
+        traces = [(merged_df, y)]
+    else:
+        traces = [(gdf, label or y) for gdf, label in trace_inputs]
+
+    for df, name in traces:
         fig.add_trace(
             go.Scatter(
-                x=xval(merged_df),
-                y=merged_df[y],
+                x=xval(df),
+                y=df[y],
                 mode="markers",
-                name=y,
-                marker=marker,
-                customdata=merged_df[all_hover_cols].values if all_hover_cols else None,
+                name=name,
+                marker=_build_marker(df, size, opacity, gradient_colors),
+                customdata=df[[size]].values if size else None,
                 hovertemplate=hover_template,
             )
         )
-    else:
-        for group_df, group_label in groups:
-            fixed_marker: dict = {"opacity": opacity}
-            if size is not None:
-                fixed_marker["size"] = _scale_bubble_sizes(group_df[size].astype(float))
-                fixed_marker["sizemode"] = "diameter"
-            fig.add_trace(
-                go.Scatter(
-                    x=xval(group_df),
-                    y=group_df[y],
-                    mode="markers",
-                    name=group_label or y,
-                    marker=fixed_marker,
-                    customdata=group_df[all_hover_cols].values if all_hover_cols else None,
-                    hovertemplate=hover_template,
-                )
-            )
 
     if size is not None:
         _add_size_legend(fig, ref_df[size].astype(float), size, opacity)
 
-    x_label = xlabel or ("Time (s)" if is_time else x)
-    apply_theme(fig, resolved_theme, title=title or smart_title(x_label, y))
-    fig.update_xaxes(
-        type=infer_axis_type(xval(ref_df)),
-        title_text=x_label,
-        tickformat=tick_format_for(xval(ref_df)),
+    ref_x = xval(ref_df)
+    finalize_axes(
+        fig,
+        resolved_theme,
+        ref_x=ref_x,
+        ref_y=ref_df[y],
+        x_col=x,
+        y_col=y,
+        title=title,
+        xlabel=xlabel,
+        ylabel=ylabel,
+        is_time=is_time,
+        show_legend=show_legend,
     )
-    fig.update_yaxes(title_text=ylabel or y, tickformat=tick_format_for(ref_df[y]))
-    fig.update_layout(showlegend=show_legend if len(fig.data) > 1 else False)
     return Chart(fig, resolved_theme)
+
+
+def _build_marker(
+    df: pd.DataFrame,
+    size: str | None,
+    opacity: float,
+    gradient: tuple[str, str] | None,
+) -> dict:
+    marker: dict = {"opacity": opacity}
+    if size is not None:
+        marker["size"] = _scale_bubble_sizes(df[size].astype(float))
+        marker["sizemode"] = "diameter"
+    if gradient is not None:
+        n = len(df)
+        start, end = gradient
+        colorbar = {
+            "tickvals": [0, n - 1],
+            "ticktext": ["First", "Last"],
+            "thickness": 12,
+            "len": 0.5,
+        }
+        marker.update(
+            {
+                "color": list(range(n)),
+                "colorscale": [[0, start], [1, end]],
+                "showscale": True,
+                "colorbar": colorbar,
+            }
+        )
+    return marker
 
 
 def _scale_bubble_sizes(series: pd.Series) -> list:
     """Scale a series of values to pixel diameters in [_BUBBLE_SIZE_MIN_PX, _BUBBLE_SIZE_MAX_PX]."""
     value_range = series.max() - series.min()
     normalized = (series - series.min()) / (value_range if value_range > 0 else 1)
-    return (_BUBBLE_SIZE_MIN_PX + (_BUBBLE_SIZE_MAX_PX - _BUBBLE_SIZE_MIN_PX) * normalized).tolist()
+    pixel_range = _BUBBLE_SIZE_MAX_PX - _BUBBLE_SIZE_MIN_PX
+    scaled = _BUBBLE_SIZE_MIN_PX + (pixel_range * normalized)
+    return scaled.tolist()
 
 
 def _add_size_legend(
@@ -151,9 +151,6 @@ def _add_size_legend(
         )
 
 
-def _build_hover_template(x: str, y: str, hover_data: list[str]) -> str:
-    """Build a Plotly hovertemplate string that includes hover_data columns."""
-    extra = "".join(
-        f"<br><b>{column}</b>: %{{customdata[{index}]}}" for index, column in enumerate(hover_data)
-    )
-    return f"<b>{x}</b>: %{{x}}<br><b>{y}</b>: %{{y}}{extra}<extra></extra>"
+def _build_hover_template(x: str, y: str, size_col: str) -> str:
+    """Build a Plotly hovertemplate string that includes the size column."""
+    return f"<b>{x}</b>: %{{x}}<br><b>{y}</b>: %{{y}}<br><b>{size_col}</b>: %{{customdata[0]}}<extra></extra>"
