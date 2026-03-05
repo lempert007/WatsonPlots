@@ -4,9 +4,11 @@ import plotly.graph_objects as go
 
 from .themes import Theme
 
-_THRESHOLD_COLOR = "red"
-_THRESHOLD_DASH = "dash"
-_THRESHOLD_WIDTH = 1.5
+
+class ThreshouldValues:
+    COLOR = "red"
+    DASH = "dash"
+    WIDTH = 1.5
 
 
 class Chart:
@@ -47,47 +49,15 @@ class Chart:
         self._fig.update_layout(**kwargs)
         return self
 
-    def add_threshold(self, value: float, *, slope: float = 0, label: str | None = None) -> "Chart":
-        """
-        Add a red dashed threshold line.
-
-        value: y-value of the line (left edge when slope != 0).
-        slope: total y change from the left to the right edge of the chart.
-               0 (default) draws a flat horizontal line.
-        label: optional annotation text shown at the right end of the line.
-        """
-        line_style = {"color": _THRESHOLD_COLOR, "dash": _THRESHOLD_DASH, "width": _THRESHOLD_WIDTH}
-        if slope == 0:
-            self._fig.add_hline(
-                y=value,
-                line_color=_THRESHOLD_COLOR,
-                line_dash=_THRESHOLD_DASH,
-                line_width=_THRESHOLD_WIDTH,
-                annotation_text=label,
-                annotation_position="top right" if label else None,
-            )
-        else:
-            self._fig.add_shape(
-                type="line",
-                x0=0,
-                y0=value,
-                x1=1,
-                y1=value + slope,
-                xref="paper",
-                yref="y",
-                line=line_style,
-            )
-            if label:
-                self._fig.add_annotation(
-                    x=1,
-                    y=value + slope,
-                    xref="paper",
-                    yref="y",
-                    text=label,
-                    showarrow=False,
-                    xanchor="right",
-                    font={"color": _THRESHOLD_COLOR},
-                )
+    def add_threshold(self, value: float, *, label: str | None = None) -> "Chart":
+        self._fig.add_hline(
+            y=value,
+            line_color=ThreshouldValues.COLOR,
+            line_dash=ThreshouldValues.DASH,
+            line_width=ThreshouldValues.WIDTH,
+            annotation_text=label,
+            annotation_position="top right" if label else None,
+        )
         return self
 
     def __repr__(self) -> str:

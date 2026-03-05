@@ -1,9 +1,19 @@
+from collections.abc import Callable
+
+import pandas as pd
 import plotly.graph_objects as go
 
 from ..chart import Chart
-from ..consts import DEFAULT_THEME, DataFormats
+from ..consts import DEFAULT_THEME, DataFormats, Trace
 from ..themes import Theme, get_theme
-from ..utils import assign_colors, finalize_axes, make_elapsed_xval, to_traces
+from ..utils import (
+    assign_colors,
+    finalize_axes,
+    make_elapsed_xval,
+    slice_by_fraction,
+    to_traces,
+    try_parse_datetime,
+)
 
 _FILL_ZERO = "tozeroy"
 _FILL_STACK = "tonexty"
@@ -23,6 +33,8 @@ def area(
     theme: str | Theme = DEFAULT_THEME,
     stacked: bool = False,
     show_legend: bool = True,
+    data_start: float = 0.0,
+    data_end: float = 1.0,
 ) -> Chart:
     """
     Create a filled area chart.
@@ -36,53 +48,84 @@ def area(
     """
     resolved_theme = get_theme(theme)
     y_cols = [y] if isinstance(y, str) else list(y)
-    traces = to_traces(data, labels)
-    ref_df = traces[0][0]
-    is_time, xval = make_elapsed_xval(x, ref_df[x])
+    traces = _build_traces(data, y_cols, labels, data_start, data_end)
+    xval, is_datetime = _build_xval(x, traces[0].df)
 
     fig = go.Figure()
-    for group_df, group_label in traces:
-        x_vals = xval(group_df)
-        for y_col in y_cols:
-            if segment_color:
-                _add_segmented_traces(
-                    fig,
-                    group_df.assign(**{x: x_vals}),
-                    x,
-                    y_col,
-                    segment_color,
-                    resolved_theme.colorway,
-                )
-            else:
-                fill = _FILL_STACK if (stacked and len(fig.data) > 0) else _FILL_ZERO
-                fig.add_trace(
-                    go.Scatter(
-                        x=x_vals,
-                        y=group_df[y_col],
-                        mode="lines",
-                        name=group_label or y_col,
-                        fill=fill,
-                        line={"width": _AREA_LINE_WIDTH},
-                    )
-                )
+    for trace in traces:
+        _add_area_trace(fig, xval, trace, x, stacked, segment_color, resolved_theme.colorway)
 
     finalize_axes(
         fig,
         resolved_theme,
-        ref_x=xval(ref_df),
-        ref_y=ref_df[y_cols[0]],
+        ref_x=xval(traces[0].df),
+        ref_y=traces[0].df[traces[0].y_col],
         x_col=x,
-        y_col=y_cols[0],
+        y_col=traces[0].y_col,
         title=title,
         xlabel=xlabel,
         ylabel=ylabel,
-        is_time=is_time,
+        is_time=is_datetime,
         show_legend=show_legend,
     )
     return Chart(fig, resolved_theme)
 
 
-def _iter_segments(df, col: str):
+def _build_traces(
+    data: DataFormats,
+    y_cols: list[str],
+    labels: list[str] | None,
+    data_start: float,
+    data_end: float,
+) -> list[Trace]:
+    """Expand input data into one Trace per (group × y_col) combination."""
+    return [
+        Trace(df=slice_by_fraction(df, data_start, data_end), y_col=y_col, name=label or y_col)
+        for df, label in to_traces(data, labels)
+        for y_col in y_cols
+    ]
+
+
+def _build_xval(x: str, ref_df: pd.DataFrame) -> tuple[Callable, bool]:
+    """Detect whether x is datetime and build the appropriate x-value accessor."""
+    parsed_x = try_parse_datetime(ref_df[x])
+    is_datetime = pd.api.types.is_datetime64_any_dtype(parsed_x)
+    xval = make_elapsed_xval(x, is_datetime, parsed_x)
+    return xval, is_datetime
+
+
+def _add_area_trace(
+    fig: go.Figure,
+    xval: Callable,
+    trace: Trace,
+    x: str,
+    stacked: bool,
+    segment_color: str | None,
+    colorway: list[str],
+) -> None:
+    """Add one area trace to the figure — either segmented or plain."""
+    if segment_color:
+        _add_segmented_traces(
+            fig, trace.df.assign(**{x: xval(trace.df)}), x, trace.y_col, segment_color, colorway
+        )
+    else:
+        fill = _FILL_STACK if stacked and len(fig.data) > 0 else _FILL_ZERO
+        fig.add_trace(_build_area_scatter(xval, trace, fill))
+
+
+def _build_area_scatter(xval: Callable, trace: Trace, fill: str) -> go.Scatter:
+    """Build a plain filled Scatter trace for one area series."""
+    return go.Scatter(
+        x=xval(trace.df),
+        y=trace.df[trace.y_col],
+        mode="lines",
+        name=trace.name,
+        fill=fill,
+        line={"width": _AREA_LINE_WIDTH},
+    )
+
+
+def _iter_segments(df: pd.DataFrame, col: str):
     """Yield (segment_df, value) for each contiguous run of equal values in col.
     Each segment includes one extra overlapping row to avoid visual gaps.
     """
@@ -95,7 +138,7 @@ def _iter_segments(df, col: str):
 
 def _add_segmented_traces(
     fig: go.Figure,
-    df,
+    df: pd.DataFrame,
     x: str,
     y_col: str,
     segment_col: str,

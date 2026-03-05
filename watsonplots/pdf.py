@@ -31,14 +31,16 @@ def _remap_axis_refs(plotly_obj, subplot_row: int) -> dict:
     return props
 
 
-def _render_batch(charts: list[Chart], override_theme: Theme | None = None) -> bytes:
+def _render_batch(
+    charts: list[Chart], override_theme: Theme | None = None, per_page: int = 1
+) -> bytes:
     figs = [c.to_fig() for c in charts]
     if override_theme is not None:
         for fig in figs:
             apply_theme(fig, override_theme, title=fig.layout.title.text or "")
-    if len(figs) == 1:
+    if per_page == 1:
         return _render_single_to_pdf(figs[0])
-    return _render_multi_to_pdf(figs)
+    return _render_multi_to_pdf(figs, total_rows=per_page)
 
 
 def _render_single_to_pdf(fig) -> bytes:
@@ -48,17 +50,18 @@ def _render_single_to_pdf(fig) -> bytes:
     return fig.to_image(format="pdf", width=A4_WIDTH, height=A4_HEIGHT)
 
 
-def _render_multi_to_pdf(figs) -> bytes:
-    subfig = _compose_subplots(figs)
+def _render_multi_to_pdf(figs, total_rows: int | None = None) -> bytes:
+    subfig = _compose_subplots(figs, total_rows=total_rows)
     _apply_subplot_theme(subfig, source_layout=figs[0].layout)
     subfig.update_xaxes(automargin=False)
     subfig.update_yaxes(automargin=False)
     return subfig.to_image(format="pdf", width=A4_WIDTH, height=A4_HEIGHT)
 
 
-def _compose_subplots(figs):
-    titles = [fig.layout.title.text or "" for fig in figs]
-    subfig = make_subplots(rows=len(figs), cols=1, vertical_spacing=0.10, subplot_titles=titles)
+def _compose_subplots(figs, total_rows: int | None = None):
+    rows = total_rows if total_rows is not None else len(figs)
+    titles = [fig.layout.title.text or "" for fig in figs] + [""] * (rows - len(figs))
+    subfig = make_subplots(rows=rows, cols=1, vertical_spacing=0.10, subplot_titles=titles)
     for subplot_row, fig in enumerate(figs, 1):
         for trace in fig.data:
             subfig.add_trace(trace, row=subplot_row, col=1)
@@ -122,7 +125,7 @@ def save_pdf(
 
     writer = pypdf.PdfWriter()
     for start in range(0, len(charts), per_page):
-        pdf_bytes = _render_batch(charts[start : start + per_page], override)
+        pdf_bytes = _render_batch(charts[start : start + per_page], override, per_page=per_page)
         writer.add_page(pypdf.PdfReader(io.BytesIO(pdf_bytes)).pages[0])
 
     with open(path, "wb") as f:

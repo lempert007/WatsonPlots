@@ -4,17 +4,16 @@ import pandas as pd
 import plotly.graph_objects as go
 
 from ..chart import Chart
-from ..consts import DEFAULT_THEME, DataFormats
+from ..consts import DEFAULT_THEME, DataFormats, Trace
 from ..themes import Theme, get_theme
 from ..utils import (
     assign_colors,
     finalize_axes,
     make_elapsed_xval,
+    slice_by_fraction,
     to_traces,
+    try_parse_datetime,
 )
-
-# Type alias for the x-value extractor returned by make_elapsed_xval
-XVal = Callable[[pd.DataFrame], pd.Series]
 
 
 def line(
@@ -31,6 +30,8 @@ def line(
     mode: str = "lines",
     smooth: bool = False,
     show_legend: bool = True,
+    data_start: float = 0.0,
+    data_end: float = 1.0,
 ) -> Chart:
     """
     Create a line chart.
@@ -47,82 +48,107 @@ def line(
     smooth:        If True, use spline interpolation.
     """
     resolved_theme = get_theme(theme)
-    fig = go.Figure()
-    line_shape = "spline" if smooth else "linear"
     y_cols = [y] if isinstance(y, str) else list(y)
+    line_shape = "spline" if smooth else "linear"
+    is_multi = _is_multi_df(data)
 
-    if isinstance(data, list) and isinstance(data[0], pd.DataFrame):
-        is_time, xval = make_elapsed_xval(x, *[df[x] for df in data])
-        ref_df = data[0]
-        _add_multi_df_traces(fig, data, y, labels, mode, line_shape, xval)
+    if is_multi:
+        traces = _prepare_multi_df_traces(data, y_cols, labels, data_start, data_end)
+        xval_dfs = [t.df for t in traces]
     else:
-        traces = to_traces(data)
-        ref_df = traces[0][0]
-        is_time, xval = make_elapsed_xval(x, ref_df[x])
-        _add_single_df_traces(fig, traces, y_cols, mode, line_shape, xval)
-        if segment_color:
-            elapsed_ref_df = ref_df.assign(**{x: xval(ref_df)})
-            _add_segment_backgrounds(fig, elapsed_ref_df, x, segment_color, resolved_theme.colorway)
+        traces = _prepare_single_df_traces(data, y_cols, labels, data_start, data_end)
+        xval_dfs = [traces[0].df]
 
-    y_label = ylabel or (y if isinstance(y, str) else "")
+    is_datetime = _is_datetime_col(x, traces[0].df)
+    xval = _build_xval(x, xval_dfs, is_datetime)
+
+    fig = go.Figure()
+    for trace in traces:
+        _add_scatter_trace(fig, xval, trace.df, trace.y_col, trace.name, mode, line_shape)
+
+    if segment_color and not is_multi:
+        first_df = traces[0].df
+        _add_segment_backgrounds(
+            fig, first_df.assign(**{x: xval(first_df)}), x, segment_color, resolved_theme.colorway
+        )
+
     finalize_axes(
         fig,
         resolved_theme,
-        ref_x=xval(ref_df),
-        ref_y=ref_df[y_cols[0]],
+        ref_x=xval(traces[0].df),
+        ref_y=traces[0].df[traces[0].y_col],
         x_col=x,
-        y_col=y_cols[0],
+        y_col=traces[0].y_col,
         title=title,
         xlabel=xlabel,
-        ylabel=y_label,
-        is_time=is_time,
+        ylabel=ylabel or (y if isinstance(y, str) else ""),
+        is_time=is_datetime,
         show_legend=show_legend,
     )
     return Chart(fig, resolved_theme)
 
 
-def _add_multi_df_traces(
-    fig: go.Figure,
+def _is_multi_df(data: DataFormats) -> bool:
+    return isinstance(data, list) and isinstance(data[0], pd.DataFrame)
+
+
+def _is_datetime_col(x: str, df: pd.DataFrame) -> bool:
+    return pd.api.types.is_datetime64_any_dtype(try_parse_datetime(df[x]))
+
+
+def _build_xval(x: str, dataframes: list[pd.DataFrame], is_datetime: bool) -> Callable:
+    parsed_cols = [try_parse_datetime(df[x]) for df in dataframes]
+    return make_elapsed_xval(x, is_datetime, *parsed_cols)
+
+
+def _prepare_multi_df_traces(
     data: list[pd.DataFrame],
-    y: str | list[str],
-    labels: list[str] | None,
-    mode: str,
-    line_shape: str,
-    xval: XVal,
-) -> None:
-    y_cols = [y] * len(data) if isinstance(y, str) else list(y)
-    trace_labels = labels if labels is not None else [str(i) for i in range(len(data))]
-    for df, label, y_col in zip(data, trace_labels, y_cols):
-        fig.add_trace(
-            go.Scatter(
-                x=xval(df),
-                y=df[y_col],
-                mode=mode,
-                name=label,
-                line={"shape": line_shape},
-            )
-        )
-
-
-def _add_single_df_traces(
-    fig: go.Figure,
-    traces: list[tuple[pd.DataFrame, str]],
     y_cols: list[str],
+    labels: list[str] | None,
+    data_start: float,
+    data_end: float,
+) -> list[Trace]:
+    sliced = [slice_by_fraction(df, data_start, data_end) for df in data]
+    y_per_df = y_cols if len(y_cols) == len(sliced) else y_cols * len(sliced)
+    trace_labels = labels or [str(i) for i in range(len(sliced))]
+    return [
+        Trace(df=df, y_col=y_col, name=name)
+        for df, y_col, name in zip(sliced, y_per_df, trace_labels)
+    ]
+
+
+def _prepare_single_df_traces(
+    data: DataFormats,
+    y_cols: list[str],
+    labels: list[str] | None,
+    data_start: float,
+    data_end: float,
+) -> list[Trace]:
+    raw_traces = to_traces(data, labels)
+    sliced = [(slice_by_fraction(df, data_start, data_end), label) for df, label in raw_traces]
+    return [
+        Trace(df=df, y_col=y_col, name=label or y_col) for df, label in sliced for y_col in y_cols
+    ]
+
+
+def _add_scatter_trace(
+    fig: go.Figure,
+    xval: Callable,
+    df: pd.DataFrame,
+    y_col: str,
+    name: str,
     mode: str,
     line_shape: str,
-    xval: XVal,
 ) -> None:
-    for group_df, group_label in traces:
-        for y_col in y_cols:
-            fig.add_trace(
-                go.Scatter(
-                    x=xval(group_df),
-                    y=group_df[y_col],
-                    mode=mode,
-                    name=group_label or y_col,
-                    line={"shape": line_shape},
-                )
-            )
+    fig.add_trace(
+        go.Scatter(
+            x=xval(df),
+            y=df[y_col],
+            mode=mode,
+            name=name,
+            line={"shape": line_shape},
+        )
+    )
 
 
 def _add_segment_backgrounds(
@@ -155,10 +181,5 @@ def _add_segment_backgrounds(
 
     for value, x0, x1 in zip(seg_values, seg_starts, seg_ends):
         fig.add_vrect(
-            x0=x0,
-            x1=x1,
-            fillcolor=color_for[value],
-            opacity=0.15,
-            layer="below",
-            line_width=0,
+            x0=x0, x1=x1, fillcolor=color_for[value], opacity=0.15, layer="below", line_width=0
         )

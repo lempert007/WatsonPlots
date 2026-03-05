@@ -33,8 +33,8 @@ Themes
 from . import themes
 from .chart import Chart
 from .charts import area, line, scatter
+from .html import save_html
 from .pdf import save_pdf
-from .report import save_html
 from .sync import sync
 from .themes import Theme, get_theme
 

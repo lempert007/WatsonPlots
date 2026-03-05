@@ -12,13 +12,11 @@ def save_html(
     path: str | os.PathLike,
     *,
     title: str = "Report",
-    offline: bool = False,
     theme: str | Theme | None = None,
 ) -> None:
     """
     Export a list of Chart objects to a single scrollable HTML page.
 
-    Plotly is loaded once (CDN by default, or bundled inline when offline=True).
     Each chart is full-width and interactive.
 
     Parameters
@@ -26,7 +24,6 @@ def save_html(
     charts:  List of Chart objects to include.
     path:    Output file path. '.html' extension added if absent.
     title:   Page <title> and heading.
-    offline: If True, bundle Plotly JS inline (larger file, no internet needed).
     theme:   Override every chart's theme for the HTML output. Accepts a theme
              name string or Theme instance. The page background and font colors
              are derived from the same theme. Does not modify the Chart objects.
@@ -34,7 +31,7 @@ def save_html(
     resolved_theme = get_theme(theme) if theme is not None else None
     page_theme = resolved_theme or DARK
 
-    divs = [_render_chart(chart, i, offline, resolved_theme) for i, chart in enumerate(charts)]
+    divs = [_render_chart(chart, i, resolved_theme) for i, chart in enumerate(charts)]
 
     page = f"""<!DOCTYPE html>
 <html lang="en">
@@ -82,9 +79,8 @@ def save_html(
         f.write(page)
 
 
-def _render_chart(chart: Chart, index: int, offline: bool, theme: Theme | None) -> str:
-    """Return the HTML div for one chart, optionally with a theme override applied."""
-    include_plotlyjs = (True if offline else "cdn") if index == 0 else False
+def _render_chart(chart: Chart, index: int, theme: Theme | None) -> str:
+    include_plotlyjs = index == 0
 
     if theme is None:
         return chart.to_fig().to_html(full_html=False, include_plotlyjs=include_plotlyjs)

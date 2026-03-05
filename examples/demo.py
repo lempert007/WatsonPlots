@@ -9,36 +9,34 @@ import watsonplots as wp
 binlog = pd.read_csv("examples/data/binlog.csv")
 jetson = pd.read_csv("examples/data/jetson.csv")
 
-# Align both logs to a common UTC time reference via cross-correlation on voltage
-binlog, jetson = wp.sync(
+synced_binlog, synced_jetson = wp.sync(
     binlog,
     jetson,
     common_columns=("BAT_Volt", "bus_voltage_v"),
     time1="timestamp_local",
     time2="jetson_timestamp_local",
+    new_column_name="voltage",
+    new_time_name="time",
 )
 
-# 1. Altitude — background bands show each flight phase, threshold marks cruise floor
-altitude_chart = wp.line(
-    binlog,
-    x="timestamp_local",
-    y="BARO_Alt",
-    segment_color="flight_mode",
-    title="Drone Altitude — Flight Phases",
-    xlabel="Time (s)",
-    ylabel="Altitude (m)",
-    theme="watson",
-).add_threshold(60, label="Cruise floor")
+altitude_chart = (
+    wp.line(
+        synced_binlog,
+        x="time",
+        y="BARO_Alt",
+        segment_color="flight_mode",
+        title="Drone Altitude — Flight Phases",
+        xlabel="Time (s)",
+        ylabel="Altitude (m)",
+        theme="watson",
+    )
+    .add_threshold(60, label="above")
+    .add_threshold(20, label="below")
+)
 
-# 2. Battery voltage from both sources (post-sync, multi-DataFrame)
-b = binlog[["timestamp_local", "BAT_Volt"]].rename(
-    columns={"timestamp_local": "time", "BAT_Volt": "voltage"}
-)
-j = jetson[["jetson_timestamp_local", "bus_voltage_v"]].rename(
-    columns={"jetson_timestamp_local": "time", "bus_voltage_v": "voltage"}
-)
+
 voltage_chart = wp.line(
-    [b, j],
+    [synced_binlog, synced_jetson],
     x="time",
     y="voltage",
     labels=["Binlog", "Jetson"],
@@ -48,10 +46,9 @@ voltage_chart = wp.line(
     theme="dark",
 ).add_threshold(11.1, label="Low battery")
 
-# 3. Roll & Pitch — multiple y columns with spline smoothing
 attitude_chart = wp.line(
-    binlog,
-    x="timestamp_local",
+    synced_binlog,
+    x="time",
     y=["ATT_Roll", "ATT_Pitch"],
     title="Attitude — Roll & Pitch",
     xlabel="Time (s)",
@@ -60,10 +57,9 @@ attitude_chart = wp.line(
     smooth=True,
 )
 
-# 4. CPU & GPU — stacked filled area
 util_chart = wp.area(
-    jetson,
-    x="jetson_timestamp_local",
+    synced_jetson,
+    x="time",
     y=["cpu_util_pct", "gpu_util_pct"],
     title="Jetson CPU & GPU Utilization (stacked)",
     xlabel="Time (s)",
@@ -72,10 +68,9 @@ util_chart = wp.area(
     stacked=True,
 )
 
-# 5. Power draw — filled area coloured by flight phase
 power_chart = wp.area(
-    jetson,
-    x="jetson_timestamp_local",
+    synced_jetson,
+    x="time",
     y="power_w",
     segment_color="flight_mode",
     title="Jetson Power Draw by Flight Phase",
@@ -84,21 +79,10 @@ power_chart = wp.area(
     theme="watson",
 )
 
-# 6. GPS flight path — colour gradient shows temporal progression (blue → red)
-path_chart = wp.scatter(
-    binlog,
-    x="GPS_Lng",
-    y="GPS_Lat",
-    gradient_colors=("#58a6ff", "#f78166"),
-    title="GPS Flight Path (blue → red = time)",
-    xlabel="Longitude",
-    ylabel="Latitude",
-    theme="minimal",
-)
-
-# 7. Speed vs altitude bubble — marker size encodes battery power draw
 bubble_chart = wp.scatter(
-    binlog.iloc[::20],  # downsample for readability
+    binlog,
+    data_start=0.3,
+    data_end=0.4,
     x="GPS_Spd",
     y="BARO_Alt",
     size="BAT_Power",
@@ -117,7 +101,6 @@ all_charts = [
     attitude_chart,
     util_chart,
     power_chart,
-    path_chart,
     bubble_chart,
 ]
 

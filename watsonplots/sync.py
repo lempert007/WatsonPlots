@@ -21,6 +21,8 @@ def sync(
     time1: str,
     time2: str,
     time_format: str = "ISO8601",
+    new_column_name: str | None = None,
+    new_time_name: str | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Align two time-series logs to a common time reference.
@@ -32,13 +34,15 @@ def sync(
     Parameters
     ----------
     df1, df2       : DataFrames to align.
-    common_column  : Column to correlate on. Either a column name str (same name in both
+    common_columns : Column to correlate on. Either a column name str (same name in both
                      DataFrames), or a (col_in_df1, col_in_df2) tuple when names differ.
     time1          : Timestamp column name in df1.
     time2          : Timestamp column name in df2.
     time_format    : pandas datetime format string for both timestamp columns.
                      Defaults to "ISO8601". Pass "mixed" for variable formats,
                      or any strptime format string (e.g. "%Y-%m-%d %H:%M:%S").
+    column_name    : If given, rename the common column to this name in both output DataFrames.
+    time_name      : If given, rename the time column to this name in both output DataFrames.
 
     Returns
     -------
@@ -70,6 +74,14 @@ def sync(
 
     df2_synced = df2.copy()
     df2_synced[time2] = timestamps_2 - lag
+
+    if new_column_name is not None:
+        df1_synced = df1_synced.rename(columns={col1: new_column_name})
+        df2_synced = df2_synced.rename(columns={col2: new_column_name})
+
+    if new_time_name is not None:
+        df1_synced = df1_synced.rename(columns={time1: new_time_name})
+        df2_synced = df2_synced.rename(columns={time2: new_time_name})
 
     return df1_synced, df2_synced
 

@@ -14,7 +14,6 @@ def _axis_theme_props(theme: Theme) -> dict:
 
 
 def apply_theme(fig: go.Figure, theme: Theme, title: str = "") -> go.Figure:
-    """Apply all theme properties to a Plotly Figure layout. Mutates fig in-place."""
     axis = _axis_theme_props(theme)
     fig.update_layout(
         title=title,

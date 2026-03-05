@@ -13,7 +13,7 @@ NO_LABEL = ""
 
 class AxisType(str, Enum):
     DATE = "date"
-    NUMERIC = "-"  # Plotly's auto-detect sentinel; resolves to linear for numeric data
+    NUMERIC = "-"
     CATEGORY = "category"
 
 
@@ -37,7 +37,6 @@ TICK_FORMAT_CHECKS: list[tuple[Callable, TickFormat]] = [
 
 
 def infer_axis_type(series: pd.Series) -> AxisType:
-    """Return the Plotly axis type for a series based on its dtype."""
     for check, axis_type in AXIS_TYPE_CHECKS:
         if check(series):
             return axis_type
@@ -51,43 +50,42 @@ def smart_title(x: str | None, y: str | None) -> str:
 
 
 def tick_format_for(series: pd.Series) -> TickFormat | None:
-    """Return a Plotly tickformat string for the series, or None."""
     for check, fmt in TICK_FORMAT_CHECKS:
         if check(series):
             return fmt
     return None
 
 
+def try_parse_datetime(series: pd.Series) -> pd.Series:
+    if pd.api.types.is_datetime64_any_dtype(series):
+        return series
+    try:
+        return pd.to_datetime(series, utc=True)
+    except Exception:
+        return series
+
+
 def make_elapsed_xval(
-    x: str, *series: pd.Series
-) -> tuple[bool, Callable[[pd.DataFrame], pd.Series]]:
-    """Build an x-value extractor that converts datetime columns to elapsed seconds.
-
-    Pass one series for a single DataFrame, or multiple to share a global t0
-    (so all traces use the same elapsed-time origin).
-
-    Returns (is_time, xval) where xval(df) → pd.Series.
-    Non-datetime columns are returned as-is.
-    """
-    is_datetime = pd.api.types.is_datetime64_any_dtype(series[0])
+    x: str, is_datetime: bool, *series: pd.Series
+) -> Callable[[pd.DataFrame], pd.Series]:
 
     if not is_datetime:
 
         def get_column(df: pd.DataFrame) -> pd.Series:
             return df[x]
 
-        return False, get_column
+        return get_column
 
     t0 = min(s.min() for s in series)
 
     def to_elapsed_seconds(df: pd.DataFrame) -> pd.Series:
-        return (df[x] - t0).dt.total_seconds()
+        parsed = try_parse_datetime(df[x])
+        return (parsed - t0).dt.total_seconds()
 
-    return True, to_elapsed_seconds
+    return to_elapsed_seconds
 
 
 def assign_colors(unique_values: list, colorway: list[str]) -> dict:
-    """Map each unique value to a color from the colorway (cycling if needed)."""
     return {value: colorway[index % len(colorway)] for index, value in enumerate(unique_values)}
 
 
@@ -105,7 +103,6 @@ def finalize_axes(
     is_time: bool,
     show_legend: bool,
 ) -> None:
-    """Apply theme, axis labels, tick formats, and legend visibility to a figure."""
     from .layout import apply_theme  # local import avoids circular dependency
 
     x_label = xlabel or (TIME_LABEL if is_time else x_col)
@@ -134,3 +131,10 @@ def to_traces(
         return list(zip(data, trace_labels))
 
     return [(pd.DataFrame(data), NO_LABEL)]
+
+
+def slice_by_fraction(df: pd.DataFrame, start: float, end: float) -> pd.DataFrame:
+    dataframe_legth = len(df)
+    start_idx = int(dataframe_legth * start)
+    end_idx = int(dataframe_legth * end)
+    return df.iloc[start_idx:end_idx]
