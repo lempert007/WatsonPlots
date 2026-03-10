@@ -5,6 +5,7 @@ from ..chart import Chart
 from ..consts import DEFAULT_THEME, DataFormats, Trace
 from ..themes import Theme, get_theme
 from ..utils import (
+    assign_colors,
     finalize_axes,
     make_elapsed_xval,
     slice_by_fraction,
@@ -22,12 +23,12 @@ def scatter(
     x: str,
     y: str,
     labels: list[str] | None = None,
+    color: str | None = None,
     size: str | None = None,
     title: str | None = None,
     xlabel: str | None = None,
     ylabel: str | None = None,
     theme: str | Theme = DEFAULT_THEME,
-    opacity: float = 0.8,
     show_legend: bool = True,
     gradient_colors: tuple[str, str] | None = None,
     data_start: float = 0.0,
@@ -41,10 +42,10 @@ def scatter(
     data:             DataFrame, coercible, or a list of DataFrames.
     x:                Column for x-axis
     y:                Column for y-axis
+    color:            Column whose unique values split data into separate marker groups.
     labels:           Trace names when data is a list of DataFrames.
     size:             Column whose values control marker diameter (bubble mode).
                       Values are auto-scaled to an 8–60px range.
-    opacity:          Marker opacity (0.0–1.0)
     gradient_colors:  When provided as (start_color, end_color) hex strings, each point is
                       coloured by its row index along the gradient instead of grouping by color=.
     """
@@ -61,27 +62,45 @@ def scatter(
 
     fig = go.Figure()
 
-    if gradient_colors is not None:
-        merged_df = pd.concat([t.df for t in trace_inputs], ignore_index=True)
-        traces = [Trace(df=merged_df, y_col=y, name=y)]
-    else:
-        traces = trace_inputs
-
-    for trace in traces:
-        fig.add_trace(
-            go.Scatter(
-                x=xval(trace.df),
-                y=trace.df[trace.y_col],
-                mode="markers",
-                name=trace.name,
-                marker=_build_marker(trace.df, size, opacity, gradient_colors),
-                customdata=trace.df[[size]].values if size else None,
-                hovertemplate=hover_template,
+    if color is not None and gradient_colors is None:
+        df = ref_df
+        unique_vals = list(df[color].unique())
+        color_map = assign_colors(unique_vals, resolved_theme.colorway)
+        for val in unique_vals:
+            subset = df[df[color] == val]
+            marker = _build_marker(subset, size, None)
+            marker["color"] = color_map[val]
+            fig.add_trace(
+                go.Scatter(
+                    x=xval(subset),
+                    y=subset[y],
+                    mode="markers",
+                    name=str(val),
+                    marker=marker,
+                    customdata=subset[[size]].values if size else None,
+                    hovertemplate=hover_template,
+                )
             )
+    else:
+        traces = (
+            _merge_for_gradient(trace_inputs, y) if gradient_colors is not None else trace_inputs
         )
 
+        for trace in traces:
+            fig.add_trace(
+                go.Scatter(
+                    x=xval(trace.df),
+                    y=trace.df[trace.y_col],
+                    mode="markers",
+                    name=trace.name,
+                    marker=_build_marker(trace.df, size, gradient_colors),
+                    customdata=trace.df[[size]].values if size else None,
+                    hovertemplate=hover_template,
+                )
+            )
+
     if size is not None:
-        _add_size_legend(fig, ref_df[size].astype(float), size, opacity)
+        _add_size_legend(fig, ref_df[size].astype(float), size)
 
     finalize_axes(
         fig,
@@ -99,13 +118,18 @@ def scatter(
     return Chart(fig, resolved_theme)
 
 
+def _merge_for_gradient(trace_inputs: list[Trace], y: str) -> list[Trace]:
+    """Merge all input traces into one so the gradient colorscale spans the full dataset."""
+    merged = pd.concat([t.df for t in trace_inputs], ignore_index=True)
+    return [Trace(df=merged, y_col=y, name=y)]
+
+
 def _build_marker(
     df: pd.DataFrame,
     size: str | None,
-    opacity: float,
     gradient: tuple[str, str] | None,
 ) -> dict:
-    marker: dict = {"opacity": opacity}
+    marker: dict = {}
     if size is not None:
         marker["size"] = _scale_bubble_sizes(df[size].astype(float))
         marker["sizemode"] = "diameter"
@@ -141,7 +165,6 @@ def _add_size_legend(
     fig: go.Figure,
     size_series: pd.Series,
     size_col: str,
-    opacity: float,
 ) -> None:
     min_val, max_val = size_series.min(), size_series.max()
     representative = [min_val, (min_val + max_val) / 2, max_val]
@@ -155,11 +178,16 @@ def _add_size_legend(
                 name=f"{val:.1f}",
                 legendgroup=size_col,
                 legendgrouptitle={"text": size_col} if index == 0 else None,
-                marker={"size": scaled, "sizemode": "diameter", "opacity": opacity},
+                marker={"size": scaled, "sizemode": "diameter"},
                 showlegend=True,
             )
         )
 
 
 def _build_hover_template(x: str, y: str, size_col: str) -> str:
-    return f"<b>{x}</b>: %{{x}}<br><b>{y}</b>: %{{y}}<br><b>{size_col}</b>: %{{customdata[0]}}<extra></extra>"
+    return (
+        f"<b>{x}</b>: %{{x}}<br>"
+        f"<b>{y}</b>: %{{y}}<br>"
+        f"<b>{size_col}</b>: %{{customdata[0]}}"
+        "<extra></extra>"
+    )

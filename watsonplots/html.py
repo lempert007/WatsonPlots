@@ -4,24 +4,26 @@ import plotly.graph_objects as go
 
 from .chart import Chart
 from .layout import apply_theme
+from .text import Text
 from .themes import DARK, Theme, get_theme
 
 
 def save_html(
-    charts: list[Chart],
+    charts: list[Chart | Text],
     path: str | os.PathLike,
     *,
     title: str = "Report",
     theme: str | Theme | None = None,
 ) -> None:
     """
-    Export a list of Chart objects to a single scrollable HTML page.
+    Export a list of Chart and Text objects to a single scrollable HTML page.
 
-    Each chart is full-width and interactive.
+    Each chart is full-width and interactive. Text objects render as section
+    titles (default) or body paragraphs (variant="body").
 
     Parameters
     ----------
-    charts:  List of Chart objects to include.
+    charts:  List of Chart and/or Text objects to include.
     path:    Output file path. '.html' extension added if absent.
     title:   Page <title> and heading.
     theme:   Override every chart's theme for the HTML output. Accepts a theme
@@ -31,7 +33,18 @@ def save_html(
     resolved_theme = get_theme(theme) if theme is not None else None
     page_theme = resolved_theme or DARK
 
-    divs = [_render_chart(chart, i, resolved_theme) for i, chart in enumerate(charts)]
+    charts_only = [item for item in charts if isinstance(item, Chart)]
+    rendered = [_render_chart(c, i, resolved_theme) for i, c in enumerate(charts_only)]
+    rendered_iter = iter(rendered)
+
+    body_parts = [
+        (
+            item.html_tag()
+            if isinstance(item, Text)
+            else f'<div class="chart">{next(rendered_iter)}</div>'
+        )
+        for item in charts
+    ]
 
     page = f"""<!DOCTYPE html>
 <html lang="en">
@@ -53,6 +66,25 @@ def save_html(
       margin-bottom: 32px;
       letter-spacing: 0.02em;
     }}
+    .block-title {{
+      color: {page_theme.font_color};
+      font-size: 1.35rem;
+      font-weight: 700;
+      max-width: 1200px;
+      margin: 44px auto 10px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid {page_theme.gridcolor};
+      letter-spacing: -0.01em;
+    }}
+    .block-text {{
+      color: {page_theme.font_color};
+      font-size: 0.9rem;
+      line-height: 1.75;
+      max-width: 1200px;
+      margin: 6px auto 24px;
+      text-align: left;
+      opacity: 0.72;
+    }}
     .chart {{
       width: 100%;
       max-width: 1200px;
@@ -67,7 +99,7 @@ def save_html(
 </head>
 <body>
   <h1>{title}</h1>
-  {''.join(f'<div class="chart">{div}</div>' for div in divs)}
+  {''.join(body_parts)}
 </body>
 </html>"""
 

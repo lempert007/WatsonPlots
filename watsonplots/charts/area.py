@@ -49,7 +49,9 @@ def area(
     resolved_theme = get_theme(theme)
     y_cols = [y] if isinstance(y, str) else list(y)
     traces = _build_traces(data, y_cols, labels, data_start, data_end)
-    xval, is_datetime = _build_xval(x, traces[0].df)
+    parsed_x = try_parse_datetime(traces[0].df[x])
+    is_datetime = pd.api.types.is_datetime64_any_dtype(parsed_x)
+    xval = make_elapsed_xval(x, is_datetime, parsed_x)
 
     fig = go.Figure()
     for trace in traces:
@@ -79,19 +81,12 @@ def _build_traces(
     data_end: float,
 ) -> list[Trace]:
     """Expand input data into one Trace per (group × y_col) combination."""
-    return [
-        Trace(df=slice_by_fraction(df, data_start, data_end), y_col=y_col, name=label or y_col)
-        for df, label in to_traces(data, labels)
-        for y_col in y_cols
-    ]
-
-
-def _build_xval(x: str, ref_df: pd.DataFrame) -> tuple[Callable, bool]:
-    """Detect whether x is datetime and build the appropriate x-value accessor."""
-    parsed_x = try_parse_datetime(ref_df[x])
-    is_datetime = pd.api.types.is_datetime64_any_dtype(parsed_x)
-    xval = make_elapsed_xval(x, is_datetime, parsed_x)
-    return xval, is_datetime
+    traces = []
+    for df, label in to_traces(data, labels):
+        sliced = slice_by_fraction(df, data_start, data_end)
+        for y_col in y_cols:
+            traces.append(Trace(df=sliced, y_col=y_col, name=label or y_col))
+    return traces
 
 
 def _add_area_trace(

@@ -32,17 +32,22 @@ Themes
 
 from . import themes
 from .chart import Chart
-from .charts import area, line, scatter
+from .charts import area, line, line3d, route, scatter, scatter3d
 from .html import save_html
 from .pdf import save_pdf
 from .sync import sync
+from .text import Text
 from .themes import Theme, get_theme
 
 __all__ = [
     "line",
     "area",
     "scatter",
+    "scatter3d",
+    "line3d",
+    "route",
     "Chart",
+    "Text",
     "Theme",
     "themes",
     "get_theme",

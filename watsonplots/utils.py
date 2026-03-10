@@ -85,6 +85,21 @@ def make_elapsed_xval(
     return to_elapsed_seconds
 
 
+def consecutive_runs(df: pd.DataFrame, color: str | None) -> list[tuple[str, pd.DataFrame]]:
+    """Split df into consecutive runs of equal color values, overlapping by 1 point so lines connect."""
+    if color is None:
+        return [("", df)]
+    vals = df[color].tolist()
+    runs = []
+    start = 0
+    for i in range(1, len(vals)):
+        if vals[i] != vals[start]:
+            runs.append((str(vals[start]), df.iloc[start : i + 1]))
+            start = i
+    runs.append((str(vals[start]), df.iloc[start:]))
+    return runs
+
+
 def assign_colors(unique_values: list, colorway: list[str]) -> dict:
     return {value: colorway[index % len(colorway)] for index, value in enumerate(unique_values)}
 
@@ -134,7 +149,7 @@ def to_traces(
 
 
 def slice_by_fraction(df: pd.DataFrame, start: float, end: float) -> pd.DataFrame:
-    dataframe_legth = len(df)
-    start_idx = int(dataframe_legth * start)
-    end_idx = int(dataframe_legth * end)
+    n = len(df)
+    start_idx = int(n * start)
+    end_idx = int(n * end)
     return df.iloc[start_idx:end_idx]

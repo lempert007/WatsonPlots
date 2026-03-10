@@ -8,6 +8,7 @@ from ..consts import DEFAULT_THEME, DataFormats, Trace
 from ..themes import Theme, get_theme
 from ..utils import (
     assign_colors,
+    consecutive_runs,
     finalize_axes,
     make_elapsed_xval,
     slice_by_fraction,
@@ -22,6 +23,7 @@ def line(
     x: str,
     y: str | list[str],
     labels: list[str] | None = None,
+    color: str | None = None,
     segment_color: str | None = None,
     title: str | None = None,
     xlabel: str | None = None,
@@ -63,8 +65,27 @@ def line(
     xval = _build_xval(x, xval_dfs, is_datetime)
 
     fig = go.Figure()
-    for trace in traces:
-        _add_scatter_trace(fig, xval, trace.df, trace.y_col, trace.name, mode, line_shape)
+    if color and not is_multi:
+        first_trace = traces[0]
+        runs = consecutive_runs(first_trace.df, color)
+        unique_vals = list(dict.fromkeys(r[0] for r in runs))
+        color_map = assign_colors(unique_vals, resolved_theme.colorway)
+        seen: set[str] = set()
+        for name, run_df in runs:
+            fig.add_trace(
+                go.Scatter(
+                    x=xval(run_df),
+                    y=run_df[first_trace.y_col],
+                    mode=mode,
+                    name=name,
+                    showlegend=name not in seen,
+                    line={"shape": line_shape, "color": color_map[name]},
+                )
+            )
+            seen.add(name)
+    else:
+        for trace in traces:
+            _add_scatter_trace(fig, xval, trace.df, trace.y_col, trace.name, mode, line_shape)
 
     if segment_color and not is_multi:
         first_df = traces[0].df
@@ -125,10 +146,12 @@ def _prepare_single_df_traces(
     data_end: float,
 ) -> list[Trace]:
     raw_traces = to_traces(data, labels)
-    sliced = [(slice_by_fraction(df, data_start, data_end), label) for df, label in raw_traces]
-    return [
-        Trace(df=df, y_col=y_col, name=label or y_col) for df, label in sliced for y_col in y_cols
-    ]
+    traces = []
+    for df, label in raw_traces:
+        sliced = slice_by_fraction(df, data_start, data_end)
+        for y_col in y_cols:
+            traces.append(Trace(df=sliced, y_col=y_col, name=label or y_col))
+    return traces
 
 
 def _add_scatter_trace(
