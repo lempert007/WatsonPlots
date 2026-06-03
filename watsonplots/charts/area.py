@@ -1,12 +1,14 @@
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from typing import Any
 
 import pandas as pd
 import plotly.graph_objects as go
 
-from ..chart import Chart
-from ..consts import DEFAULT_THEME, DataFormats, Trace
-from ..themes import Theme, get_theme
-from ..utils import (
+from watsonplots.chart import Chart
+from watsonplots.consts import DEFAULT_THEME, DataFormats
+from watsonplots.themes import Theme, get_theme
+from watsonplots.utils import (
+    Trace,
     assign_colors,
     finalize_axes,
     make_elapsed_xval,
@@ -120,7 +122,7 @@ def _build_area_scatter(xval: Callable, trace: Trace, fill: str) -> go.Scatter:
     )
 
 
-def _iter_segments(df: pd.DataFrame, col: str):
+def _iter_segments(df: pd.DataFrame, col: str) -> Iterator[tuple[pd.DataFrame, Any]]:
     """Yield (segment_df, value) for each contiguous run of equal values in col.
     Each segment includes one extra overlapping row to avoid visual gaps.
     """

@@ -2,7 +2,7 @@ import os
 
 import plotly.graph_objects as go
 
-from .themes import Theme
+from watsonplots.themes import Theme
 
 _THRESHOLD_COLOR = "red"
 _THRESHOLD_DASH = "dash"
@@ -95,10 +95,10 @@ class Chart:
     def highlight(
         self,
         *,
-        x_start=None,
-        x_end=None,
-        y_start=None,
-        y_end=None,
+        x_start: float | None = None,
+        x_end: float | None = None,
+        y_start: float | None = None,
+        y_end: float | None = None,
         label: str | None = None,
         color: str | None = None,
     ) -> "Chart":

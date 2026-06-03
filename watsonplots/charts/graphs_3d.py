@@ -1,15 +1,10 @@
 import plotly.graph_objects as go
 
-from ..chart import Chart
-from ..consts import DEFAULT_THEME, DataFormats
-from ..layout import apply_theme
-from ..themes import Theme, get_theme
-from ..utils import (
-    assign_colors,
-    slice_by_fraction,
-    smart_title,
-    to_traces,
-)
+from watsonplots.chart import Chart
+from watsonplots.consts import DEFAULT_THEME, DataFormats
+from watsonplots.layout import apply_theme
+from watsonplots.themes import Theme, get_theme
+from watsonplots.utils import assign_colors, slice_by_fraction, smart_title, to_traces
 
 
 def scatter3d(
@@ -47,33 +42,7 @@ def scatter3d(
     df = slice_by_fraction(first_df, data_start, data_end)
 
     fig = go.Figure()
-
-    if color is not None:
-        unique_vals = list(df[color].unique())
-        color_map = assign_colors(unique_vals, resolved_theme.colorway)
-        for val in unique_vals:
-            subset = df[df[color] == val]
-            fig.add_trace(
-                go.Scatter3d(
-                    x=subset[x],
-                    y=subset[y],
-                    z=subset[z],
-                    mode="markers",
-                    name=str(val),
-                    marker=dict(color=color_map[val], size=4),
-                )
-            )
-    else:
-        fig.add_trace(
-            go.Scatter3d(
-                x=df[x],
-                y=df[y],
-                z=df[z],
-                mode="markers",
-                name="",
-                marker=dict(size=4),
-            )
-        )
+    _add_3d_traces(fig, df, x, y, z, mode="markers", color=color, colorway=resolved_theme.colorway)
 
     _finalize_3d(
         fig,
@@ -125,33 +94,7 @@ def line3d(
     df = slice_by_fraction(first_df, data_start, data_end)
 
     fig = go.Figure()
-
-    if color is not None:
-        unique_vals = list(df[color].unique())
-        color_map = assign_colors(unique_vals, resolved_theme.colorway)
-        for val in unique_vals:
-            subset = df[df[color] == val]
-            fig.add_trace(
-                go.Scatter3d(
-                    x=subset[x],
-                    y=subset[y],
-                    z=subset[z],
-                    mode="lines",
-                    name=str(val),
-                    line=dict(color=color_map[val], width=3),
-                )
-            )
-    else:
-        fig.add_trace(
-            go.Scatter3d(
-                x=df[x],
-                y=df[y],
-                z=df[z],
-                mode="lines",
-                name="",
-                line=dict(width=3),
-            )
-        )
+    _add_3d_traces(fig, df, x, y, z, mode="lines", color=color, colorway=resolved_theme.colorway)
 
     _finalize_3d(
         fig,
@@ -166,6 +109,52 @@ def line3d(
         show_legend=show_legend,
     )
     return Chart(fig, resolved_theme)
+
+
+def _add_3d_traces(
+    fig: go.Figure,
+    df,
+    x: str,
+    y: str,
+    z: str,
+    mode: str,
+    color: str | None,
+    colorway: list[str],
+) -> None:
+    """Add one Scatter3d trace per color group, or a single trace when color is None."""
+    is_lines = mode == "lines"
+    if color is not None:
+        unique_vals = list(df[color].unique())
+        color_map = assign_colors(unique_vals, colorway)
+        for val in unique_vals:
+            subset = df[df[color] == val]
+            style = (
+                dict(color=color_map[val], width=3)
+                if is_lines
+                else dict(color=color_map[val], size=4)
+            )
+            fig.add_trace(
+                go.Scatter3d(
+                    x=subset[x],
+                    y=subset[y],
+                    z=subset[z],
+                    mode=mode,
+                    name=str(val),
+                    **{"line" if is_lines else "marker": style},
+                )
+            )
+    else:
+        style = dict(width=3) if is_lines else dict(size=4)
+        fig.add_trace(
+            go.Scatter3d(
+                x=df[x],
+                y=df[y],
+                z=df[z],
+                mode=mode,
+                name="",
+                **{"line" if is_lines else "marker": style},
+            )
+        )
 
 
 def _finalize_3d(

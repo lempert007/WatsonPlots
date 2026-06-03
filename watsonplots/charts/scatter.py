@@ -1,10 +1,11 @@
 import pandas as pd
 import plotly.graph_objects as go
 
-from ..chart import Chart
-from ..consts import DEFAULT_THEME, DataFormats, Trace
-from ..themes import Theme, get_theme
-from ..utils import (
+from watsonplots.chart import Chart
+from watsonplots.consts import DEFAULT_THEME, DataFormats
+from watsonplots.themes import Theme, get_theme
+from watsonplots.utils import (
+    Trace,
     assign_colors,
     finalize_axes,
     make_elapsed_xval,
@@ -82,9 +83,11 @@ def scatter(
                 )
             )
     else:
-        traces = (
-            _merge_for_gradient(trace_inputs, y) if gradient_colors is not None else trace_inputs
-        )
+        if gradient_colors is not None:
+            merged_df = pd.concat([t.df for t in trace_inputs], ignore_index=True)
+            traces = [Trace(df=merged_df, y_col=y, name=y)]
+        else:
+            traces = trace_inputs
 
         for trace in traces:
             fig.add_trace(
@@ -118,12 +121,6 @@ def scatter(
     return Chart(fig, resolved_theme)
 
 
-def _merge_for_gradient(trace_inputs: list[Trace], y: str) -> list[Trace]:
-    """Merge all input traces into one so the gradient colorscale spans the full dataset."""
-    merged = pd.concat([t.df for t in trace_inputs], ignore_index=True)
-    return [Trace(df=merged, y_col=y, name=y)]
-
-
 def _build_marker(
     df: pd.DataFrame,
     size: str | None,
@@ -134,17 +131,17 @@ def _build_marker(
         marker["size"] = _scale_bubble_sizes(df[size].astype(float))
         marker["sizemode"] = "diameter"
     if gradient is not None:
-        dataframe_length = len(df)
+        n = len(df)
         start, end = gradient
         colorbar = {
-            "tickvals": [0, dataframe_length - 1],
+            "tickvals": [0, n - 1],
             "ticktext": ["First", "Last"],
             "thickness": 12,
             "len": 0.5,
         }
         marker.update(
             {
-                "color": list(range(dataframe_length)),
+                "color": list(range(n)),
                 "colorscale": [[0, start], [1, end]],
                 "showscale": True,
                 "colorbar": colorbar,

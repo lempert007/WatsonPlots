@@ -1,12 +1,14 @@
-from collections.abc import Callable
+from typing import cast
 
 import pandas as pd
 import plotly.graph_objects as go
 
-from ..chart import Chart
-from ..consts import DEFAULT_THEME, DataFormats, Trace
-from ..themes import Theme, get_theme
-from ..utils import (
+from watsonplots.chart import Chart
+from watsonplots.consts import DEFAULT_THEME, DataFormats
+from watsonplots.exceptions import YColumnMismatchError
+from watsonplots.themes import Theme, get_theme
+from watsonplots.utils import (
+    Trace,
     assign_colors,
     consecutive_runs,
     finalize_axes,
@@ -52,20 +54,25 @@ def line(
     resolved_theme = get_theme(theme)
     y_cols = [y] if isinstance(y, str) else list(y)
     line_shape = "spline" if smooth else "linear"
-    is_multi = _is_multi_df(data)
+    multiple_dataframes = (
+        isinstance(data, list) and bool(data) and isinstance(data[0], pd.DataFrame)
+    )
 
-    if is_multi:
-        traces = _prepare_multi_df_traces(data, y_cols, labels, data_start, data_end)
-        xval_dfs = [t.df for t in traces]
+    if multiple_dataframes:
+        traces = _prepare_multi_df_traces(
+            cast(list[pd.DataFrame], data), y_cols, labels, data_start, data_end
+        )
+        source_dataframes = [t.df for t in traces]
     else:
         traces = _prepare_single_df_traces(data, y_cols, labels, data_start, data_end)
-        xval_dfs = [traces[0].df]
+        source_dataframes = [traces[0].df]
 
-    is_datetime = _is_datetime_col(x, traces[0].df)
-    xval = _build_xval(x, xval_dfs, is_datetime)
+    is_datetime = pd.api.types.is_datetime64_any_dtype(try_parse_datetime(traces[0].df[x]))
+    parsed_x = [try_parse_datetime(df[x]) for df in source_dataframes]
+    xval = make_elapsed_xval(x, is_datetime, *parsed_x)
 
     fig = go.Figure()
-    if color and not is_multi:
+    if color and not multiple_dataframes:
         first_trace = traces[0]
         runs = consecutive_runs(first_trace.df, color)
         unique_vals = list(dict.fromkeys(r[0] for r in runs))
@@ -85,9 +92,17 @@ def line(
             seen.add(name)
     else:
         for trace in traces:
-            _add_scatter_trace(fig, xval, trace.df, trace.y_col, trace.name, mode, line_shape)
+            fig.add_trace(
+                go.Scatter(
+                    x=xval(trace.df),
+                    y=trace.df[trace.y_col],
+                    mode=mode,
+                    name=trace.name,
+                    line={"shape": line_shape},
+                )
+            )
 
-    if segment_color and not is_multi:
+    if segment_color and not multiple_dataframes:
         first_df = traces[0].df
         _add_segment_backgrounds(
             fig, first_df.assign(**{x: xval(first_df)}), x, segment_color, resolved_theme.colorway
@@ -109,19 +124,6 @@ def line(
     return Chart(fig, resolved_theme)
 
 
-def _is_multi_df(data: DataFormats) -> bool:
-    return isinstance(data, list) and isinstance(data[0], pd.DataFrame)
-
-
-def _is_datetime_col(x: str, df: pd.DataFrame) -> bool:
-    return pd.api.types.is_datetime64_any_dtype(try_parse_datetime(df[x]))
-
-
-def _build_xval(x: str, dataframes: list[pd.DataFrame], is_datetime: bool) -> Callable:
-    parsed_cols = [try_parse_datetime(df[x]) for df in dataframes]
-    return make_elapsed_xval(x, is_datetime, *parsed_cols)
-
-
 def _prepare_multi_df_traces(
     data: list[pd.DataFrame],
     y_cols: list[str],
@@ -130,7 +132,15 @@ def _prepare_multi_df_traces(
     data_end: float,
 ) -> list[Trace]:
     sliced = [slice_by_fraction(df, data_start, data_end) for df in data]
-    y_per_df = y_cols if len(y_cols) == len(sliced) else y_cols * len(sliced)
+    if len(y_cols) == len(sliced):
+        y_per_df = y_cols
+    elif len(y_cols) == 1:
+        y_per_df = y_cols * len(sliced)
+    else:
+        raise YColumnMismatchError(
+            f"y has {len(y_cols)} columns but data has {len(sliced)} DataFrames. "
+            "Provide exactly 1 y column (applied to all) or one per DataFrame."
+        )
     trace_labels = labels or [str(i) for i in range(len(sliced))]
     return [
         Trace(df=df, y_col=y_col, name=name)
@@ -145,33 +155,12 @@ def _prepare_single_df_traces(
     data_start: float,
     data_end: float,
 ) -> list[Trace]:
-    raw_traces = to_traces(data, labels)
     traces = []
-    for df, label in raw_traces:
+    for df, label in to_traces(data, labels):
         sliced = slice_by_fraction(df, data_start, data_end)
         for y_col in y_cols:
             traces.append(Trace(df=sliced, y_col=y_col, name=label or y_col))
     return traces
-
-
-def _add_scatter_trace(
-    fig: go.Figure,
-    xval: Callable,
-    df: pd.DataFrame,
-    y_col: str,
-    name: str,
-    mode: str,
-    line_shape: str,
-) -> None:
-    fig.add_trace(
-        go.Scatter(
-            x=xval(df),
-            y=df[y_col],
-            mode=mode,
-            name=name,
-            line={"shape": line_shape},
-        )
-    )
 
 
 def _add_segment_backgrounds(

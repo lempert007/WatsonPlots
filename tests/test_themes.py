@@ -1,6 +1,7 @@
 import pytest
 
 import watsonplots as wp
+from watsonplots.exceptions import UnknownThemeError
 from watsonplots.themes import DARK, Theme, get_theme
 
 
@@ -9,7 +10,7 @@ def test_get_theme_by_string():
 
 
 def test_get_theme_unknown_raises():
-    with pytest.raises(ValueError, match="Unknown theme"):
+    with pytest.raises(UnknownThemeError, match="Unknown theme"):
         get_theme("neon")
 
 

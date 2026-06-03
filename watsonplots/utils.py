@@ -1,13 +1,26 @@
 from collections.abc import Callable
+from dataclasses import dataclass
 from enum import Enum
+from typing import Any
 
 import pandas as pd
 import plotly.graph_objects as go
 
-from .consts import TIME_LABEL, DataFormats
-from .themes import Theme
+from watsonplots.consts import TIME_LABEL, DataFormats
+from watsonplots.exceptions import InvalidSliceRangeError, MissingSeriesError
+from watsonplots.layout import apply_theme
+from watsonplots.themes import Theme
 
 _LARGE_NUMBER_THRESHOLD = 10_000
+
+
+@dataclass
+class Trace:
+    df: pd.DataFrame
+    y_col: str
+    name: str
+
+
 NO_LABEL = ""
 
 
@@ -21,39 +34,24 @@ class TickFormat(str, Enum):
     LARGE_NUMBER = ",.0f"  # thousands separator, no decimals
 
 
-AXIS_TYPE_CHECKS: list[tuple[Callable, AxisType]] = [
-    (pd.api.types.is_datetime64_any_dtype, AxisType.DATE),
-    (pd.api.types.is_numeric_dtype, AxisType.NUMERIC),
-]
-
-
-def _is_large_numeric(series: pd.Series) -> bool:
-    return pd.api.types.is_numeric_dtype(series) and series.abs().max() >= _LARGE_NUMBER_THRESHOLD
-
-
-TICK_FORMAT_CHECKS: list[tuple[Callable, TickFormat]] = [
-    (_is_large_numeric, TickFormat.LARGE_NUMBER),
-]
-
-
 def infer_axis_type(series: pd.Series) -> AxisType:
-    for check, axis_type in AXIS_TYPE_CHECKS:
-        if check(series):
-            return axis_type
+    if pd.api.types.is_datetime64_any_dtype(series):
+        return AxisType.DATE
+    if pd.api.types.is_numeric_dtype(series):
+        return AxisType.NUMERIC
     return AxisType.CATEGORY
+
+
+def tick_format_for(series: pd.Series) -> TickFormat | None:
+    if pd.api.types.is_numeric_dtype(series) and series.abs().max() >= _LARGE_NUMBER_THRESHOLD:
+        return TickFormat.LARGE_NUMBER
+    return None
 
 
 def smart_title(x: str | None, y: str | None) -> str:
     if x and y:
         return f"{y} vs {x}"
     return ""
-
-
-def tick_format_for(series: pd.Series) -> TickFormat | None:
-    for check, fmt in TICK_FORMAT_CHECKS:
-        if check(series):
-            return fmt
-    return None
 
 
 def try_parse_datetime(series: pd.Series) -> pd.Series:
@@ -76,6 +74,11 @@ def make_elapsed_xval(
 
         return get_column
 
+    if not series:
+        raise MissingSeriesError(
+            "make_elapsed_xval requires at least one series when is_datetime=True"
+        )
+
     t0 = min(s.min() for s in series)
 
     def to_elapsed_seconds(df: pd.DataFrame) -> pd.Series:
@@ -89,6 +92,8 @@ def consecutive_runs(df: pd.DataFrame, color: str | None) -> list[tuple[str, pd.
     """Split df into consecutive runs of equal color values, overlapping by 1 point so lines connect."""
     if color is None:
         return [("", df)]
+    if df.empty:
+        return []
     vals = df[color].tolist()
     runs = []
     start = 0
@@ -100,7 +105,7 @@ def consecutive_runs(df: pd.DataFrame, color: str | None) -> list[tuple[str, pd.
     return runs
 
 
-def assign_colors(unique_values: list, colorway: list[str]) -> dict:
+def assign_colors(unique_values: list[Any], colorway: list[str]) -> dict[Any, str]:
     return {value: colorway[index % len(colorway)] for index, value in enumerate(unique_values)}
 
 
@@ -118,18 +123,14 @@ def finalize_axes(
     is_time: bool,
     show_legend: bool,
 ) -> None:
-    from .layout import apply_theme  # local import avoids circular dependency
-
     x_label = xlabel or (TIME_LABEL if is_time else x_col)
     apply_theme(fig, theme, title=title or smart_title(x_label, y_col))
 
     x_type = infer_axis_type(ref_x)
-    x_tick_fmt = tick_format_for(ref_x)
-    fig.update_xaxes(type=x_type, title_text=x_label, tickformat=x_tick_fmt)
+    fig.update_xaxes(type=x_type, title_text=x_label, tickformat=tick_format_for(ref_x))
 
     y_type = infer_axis_type(ref_y)
-    y_tick_fmt = tick_format_for(ref_y)
-    fig.update_yaxes(type=y_type, title_text=ylabel or y_col, tickformat=y_tick_fmt)
+    fig.update_yaxes(type=y_type, title_text=ylabel or y_col, tickformat=tick_format_for(ref_y))
 
     fig.update_layout(showlegend=show_legend if len(fig.data) > 1 else False)
 
@@ -138,18 +139,17 @@ def to_traces(
     data: DataFormats,
     labels: list[str] | None = None,
 ) -> list[tuple[pd.DataFrame, str]]:
-    is_multi_df = isinstance(data, list) and isinstance(data[0], pd.DataFrame)
-
-    if is_multi_df:
-        auto_labels = [str(i) for i in range(len(data))]
-        trace_labels = labels if labels is not None else auto_labels
+    if isinstance(data, list) and bool(data) and isinstance(data[0], pd.DataFrame):
+        trace_labels = labels if labels is not None else [str(i) for i in range(len(data))]
         return list(zip(data, trace_labels))
 
     return [(pd.DataFrame(data), NO_LABEL)]
 
 
 def slice_by_fraction(df: pd.DataFrame, start: float, end: float) -> pd.DataFrame:
+    if not (0.0 <= start <= end <= 1.0):
+        raise InvalidSliceRangeError(
+            f"slice_by_fraction requires 0 ≤ start ≤ end ≤ 1, got start={start}, end={end}"
+        )
     n = len(df)
-    start_idx = int(n * start)
-    end_idx = int(n * end)
-    return df.iloc[start_idx:end_idx]
+    return df.iloc[int(n * start) : int(n * end)]

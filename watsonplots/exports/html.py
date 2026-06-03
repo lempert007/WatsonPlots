@@ -2,10 +2,10 @@ import os
 
 import plotly.graph_objects as go
 
-from .chart import Chart
-from .layout import apply_theme
-from .text import Text
-from .themes import DARK, Theme, get_theme
+from watsonplots.chart import Chart
+from watsonplots.layout import apply_theme
+from watsonplots.text import Text
+from watsonplots.themes import DARK, Theme, get_theme
 
 
 def save_html(
@@ -117,7 +117,6 @@ def _render_chart(chart: Chart, index: int, theme: Theme | None) -> str:
     if theme is None:
         return chart.to_fig().to_html(full_html=False, include_plotlyjs=include_plotlyjs)
 
-    # Copy the figure so the original Chart object is never mutated
     fig = go.Figure(chart.to_fig().to_dict())
     apply_theme(fig, theme, title=fig.layout.title.text or "")
     return fig.to_html(full_html=False, include_plotlyjs=include_plotlyjs)

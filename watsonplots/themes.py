@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+from watsonplots.exceptions import UnknownThemeError
+
 
 @dataclass(frozen=True)
 class Theme:
@@ -110,5 +112,5 @@ def get_theme(theme: str | Theme) -> Theme:
         return theme
     key = theme.lower().strip()
     if key not in _THEMES:
-        raise ValueError(f"Unknown theme '{theme}'. Available: {list(_THEMES.keys())}")
+        raise UnknownThemeError(f"Unknown theme '{theme}'. Available: {list(_THEMES.keys())}")
     return _THEMES[key]

@@ -2,15 +2,15 @@ import warnings
 
 import pandas as pd
 
-from .exceptions import ColumnNotFoundError, ConstantColumnError, TimeParseError
+from watsonplots.exceptions import (
+    ColumnNotFoundError,
+    ConstantColumnError,
+    MissingDependencyError,
+    TimeParseError,
+)
 
-# Both signals are resampled to this uniform grid before cross-correlation.
-# Finer resolution catches smaller time offsets; 100 ms is a practical default.
-_RESAMPLE_FREQ = "100ms"
-
-# Ratio of peak correlation to signal length below which we warn the user.
-# Empirically, well-correlated signals score > 0.3; unrelated signals score < 0.05.
-_MIN_CORRELATION_SCORE = 0.1
+_RESAMPLE_FREQ = "10ms"
+_LOW_CORRELATION_THRESHOLD = 0.3
 
 
 def sync(
@@ -20,34 +20,23 @@ def sync(
     common_columns: str | tuple[str, str],
     time1: str,
     time2: str,
-    time_format: str = "ISO8601",
+    time_format: str = "mixed",
     new_column_name: str | None = None,
     new_time_name: str | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Align two time-series logs to a common time reference.
-
-    Uses cross-correlation on a shared signal to find the constant time offset,
-    then shifts df2's timestamps by that lag. Both DataFrames keep their original
-    rows and sample rates — only the timestamp column in df2 is adjusted.
+    Time-align two DataFrames by cross-correlating a shared signal column.
 
     Parameters
     ----------
-    df1, df2       : DataFrames to align.
-    common_columns : Column to correlate on. Either a column name str (same name in both
-                     DataFrames), or a (col_in_df1, col_in_df2) tuple when names differ.
-    time1          : Timestamp column name in df1.
-    time2          : Timestamp column name in df2.
-    time_format    : pandas datetime format string for both timestamp columns.
-                     Defaults to "ISO8601". Pass "mixed" for variable formats,
-                     or any strptime format string (e.g. "%Y-%m-%d %H:%M:%S").
-    column_name    : If given, rename the common column to this name in both output DataFrames.
-    time_name      : If given, rename the time column to this name in both output DataFrames.
-
-    Returns
-    -------
-    (df1, df2) — both with normalized timestamp columns, df2 shifted by the
-    discovered lag. All other columns are untouched.
+    df1, df2:          DataFrames to align.
+    common_columns:    Signal column used for cross-correlation. Pass a single
+                       string when both DataFrames share the same column name,
+                       or a (col1, col2) tuple when the names differ.
+    time1, time2:      Timestamp columns (one per DataFrame).
+    time_format:       strptime format string, or "mixed" for auto-detection.
+    new_column_name:   Rename both signal columns to this in the output.
+    new_time_name:     Rename both time columns to this in the output.
     """
     col1, col2 = (
         (common_columns, common_columns) if isinstance(common_columns, str) else common_columns
@@ -116,27 +105,31 @@ def _compute_lag(
     col2: str,
 ) -> pd.Timedelta:
     try:
-        from scipy.signal import correlate  # noqa: PLC0415
+        from scipy.signal import correlate  # optional dependency
     except ImportError as exc:
-        raise ImportError("sync requires scipy: pip install scipy") from exc
+        raise MissingDependencyError("sync requires scipy: pip install scipy") from exc
 
     resampled_1 = _resample(signal_1)
     resampled_2 = _resample(signal_2)
 
-    cross_correlation = correlate(
-        _normalize(resampled_1),
-        _normalize(resampled_2),
-    )
+    common_index = resampled_1.index.union(resampled_2.index)
+    aligned_1 = resampled_1.reindex(common_index).interpolate().fillna(0)
+    aligned_2 = resampled_2.reindex(common_index).interpolate().fillna(0)
 
-    correlation_quality_score = cross_correlation.max() / min(len(resampled_1), len(resampled_2))
-    if correlation_quality_score < _MIN_CORRELATION_SCORE:
+    norm_1 = _normalize(aligned_1)
+    norm_2 = _normalize(aligned_2)
+
+    correlation = correlate(norm_1, norm_2, mode="full")
+    lag_index = correlation.argmax() - (len(norm_2) - 1)
+    freq = pd.tseries.frequencies.to_offset(_RESAMPLE_FREQ)
+    lag = pd.Timedelta(freq.nanos * lag_index, unit="ns")
+
+    max_correlation = float(correlation.max() / len(norm_1))
+    if max_correlation < _LOW_CORRELATION_THRESHOLD:
         warnings.warn(
-            f"sync signals '{col1}' and '{col2}' show low correlation — "
-            "result may be unreliable. Try a different 'common_column'.",
-            stacklevel=4,
+            f"low correlation ({max_correlation:.2f}) between '{col1}' and '{col2}'. "
+            "Sync result may be unreliable.",
+            stacklevel=3,
         )
 
-    zero_lag_index = len(resampled_2) - 1
-    peak_index = int(cross_correlation.argmax())
-    lag_in_samples = peak_index - zero_lag_index
-    return pd.Timedelta(_RESAMPLE_FREQ) * lag_in_samples
+    return lag
